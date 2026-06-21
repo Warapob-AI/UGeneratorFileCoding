@@ -40,7 +40,8 @@ export async function POST(request: Request) {
       selectedFiles,
       buttons,
       frontendMode,
-      reportEngine
+      reportEngine,
+      pageHeader
     } = body as {
       moduleName: string;
       moduleType: string;
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
       buttons: ButtonsSelection;
       frontendMode: 'search' | 'report';
       reportEngine: 'direct' | 'crystal' | 'jasper';
+      pageHeader?: string;
     };
 
     if (!moduleName || !moduleType || !fields || fields.length === 0) {
@@ -167,7 +169,7 @@ export async function POST(request: Request) {
       allFiles.push({
         key: 'frontendModel',
         path: path.join(frontendBase, '_models', moduleType.toLowerCase(), `${camelName}.model.ts`),
-        content: generateFrontendModel(moduleName, moduleType, fields)
+        content: generateFrontendModel(moduleName, moduleType, fields, frontendMode)
       });
     }
 
@@ -187,7 +189,7 @@ export async function POST(request: Request) {
         allFiles.push({
           key: 'frontendSearchComponent',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, `${camelName}.tsx`),
-          content: generateFrontendSearchComponent(moduleName, moduleType, fields, buttons)
+          content: generateFrontendSearchComponent(moduleName, moduleType, fields, buttons, pageHeader)
         });
         // 2. Search Table
         allFiles.push({
@@ -213,19 +215,13 @@ export async function POST(request: Request) {
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, 'pop-ups', `${camelName}-form-modal.tsx`),
           content: generateFrontendDetailComponent(moduleName, moduleType, fields, buttons)
         });
-        // 6. Single view (Alternative)
-        allFiles.push({
-          key: 'frontendComponentSingle',
-          path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, `${camelName}-single.tsx`),
-          content: generateFrontendComponent(moduleName, moduleType, fields, buttons)
-        });
       } else if (frontendMode === 'report') {
         const reportNameCamel = toCamelCase(reportFileName || moduleName);
         // 1. Report Page
         allFiles.push({
           key: 'frontendReportComponent',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, `${reportNameCamel}.tsx`),
-          content: generateFrontendReportComponent(moduleName, moduleType, fields, buttons, reportFileName, reportEngine)
+          content: generateFrontendReportComponent(moduleName, moduleType, fields, buttons, reportFileName, reportEngine, pageHeader)
         });
         // 2. Report Schema
         allFiles.push({

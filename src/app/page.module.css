@@ -1,6 +1,6 @@
 .container {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 520px 1fr;
   height: 100vh;
   width: 100vw;
   gap: 24px;
@@ -15,8 +15,8 @@
   flex-direction: column;
   height: 100%;
   gap: 20px;
-  padding: 24px;
-  overflow: hidden;
+  padding: 24px 12px 24px 24px;
+  overflow-y: auto;
 }
 
 .titleSection {
@@ -78,17 +78,12 @@
 .fieldsSection {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  overflow: hidden;
 }
 
 .fieldsContainer {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 1;
-  overflow-y: auto;
-  padding-right: 4px;
 }
 
 .fieldRow {
@@ -148,6 +143,22 @@
 
 .btnAddField:hover {
   background: var(--accent-primary);
+  color: white;
+}
+
+.btnClearFields {
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--error);
+  border: 1px dashed var(--error);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btnClearFields:hover {
+  background: var(--error);
   color: white;
 }
 
@@ -307,6 +318,10 @@
   color: #e2e8f0;
   overflow: auto;
   white-space: pre;
+}
+
+.codeArea code {
+  font-family: inherit;
 }
 
 /* Toast Alerts */

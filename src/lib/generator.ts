@@ -13,8 +13,10 @@ export function toCamelCase(str: string): string {
 export function toSnakeCase(str: string): string {
   if (!str) return '';
   return str
+    .replace(/[\s\-]+/g, '_')
     .replace(/([a-z\d])([A-Z])/g, '$1_$2')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/_+/g, '_')
     .toUpperCase();
 }
 
@@ -26,12 +28,50 @@ export function toKebabCase(str: string): string {
     .toLowerCase();
 }
 
+export function getDefaultLabel(name: string): string {
+  if (!name) return '';
+  const lower = name.toLowerCase();
+  if (lower.endsWith('tolabel') || lower.endsWith('to label') || lower.endsWith('to')) {
+    return 'To';
+  }
+  return toPascalCase(name).replace(/([a-z])([A-Z])/g, '$1 $2');
+}
+
+export function findMatchingFromField(fieldName: string, allFields: FieldDefinition[]): string | undefined {
+  const lower = fieldName.toLowerCase();
+  if (lower.endsWith('to')) {
+    const prefix = fieldName.slice(0, -2);
+    const matching = allFields.find(f => {
+      const fLower = f.name.toLowerCase();
+      return fLower === (prefix + 'from').toLowerCase() || fLower === (prefix + 'From').toLowerCase();
+    });
+    return matching?.name;
+  }
+  return undefined;
+}
+
+export function findMatchingToField(fieldName: string, allFields: FieldDefinition[]): string | undefined {
+  const lower = fieldName.toLowerCase();
+  if (lower.endsWith('from')) {
+    const prefix = fieldName.slice(0, -4);
+    const matching = allFields.find(f => {
+      const fLower = f.name.toLowerCase();
+      return fLower === (prefix + 'to').toLowerCase() || fLower === (prefix + 'To').toLowerCase();
+    });
+    return matching?.name;
+  }
+  return undefined;
+}
+
 export interface FieldDefinition {
   name: string;
   type: string; // 'String' | 'Integer' | 'Long' | 'Double' | 'BigDecimal' | 'LocalDate' | 'Boolean'
+  frontendType?: string; // 'text' | 'number' | 'calendar' | 'checkbox' | 'select' | 'radio'
   columnName: string;
   isKey: boolean;
   label?: string;
+  isRequired?: boolean;
+  maxLength?: number;
 }
 
 export interface ButtonsSelection {
@@ -53,7 +93,7 @@ export function mapJavaTypeToTs(javaType: string): string {
     case 'Long':
     case 'Double':
     case 'BigDecimal': return 'number';
-    case 'LocalDate': return 'string';
+    case 'LocalDate': return 'Date';
     case 'Boolean': return 'boolean';
     default: return 'any';
   }
@@ -84,8 +124,13 @@ export function generateBackendDTOs(
   const pascalName = toPascalCase(moduleName);
   const packageName = `com.gable.um.${moduleType.toLowerCase()}.dto`;
 
+  // Helper to generate Java fields
+  const generateJavaFields = (fieldList: FieldDefinition[]) => {
+    return fieldList.map(f => `    private ${f.type} ${f.name};`).join('\n');
+  };
+
   // Create Request DTO
-  const createFields = fields.map(f => `    private ${f.type} ${f.name};`).join('\n');
+  const createFields = generateJavaFields(fields);
   const createRequest = `package ${packageName};
 
 import lombok.AllArgsConstructor;
@@ -108,9 +153,7 @@ ${createFields}
 
   // Update Request DTO (Typically excludes primary keys)
   const nonKeyFields = fields.filter(f => !f.isKey);
-  const updateFieldsStr = (nonKeyFields.length > 0 ? nonKeyFields : fields)
-    .map(f => `    private ${f.type} ${f.name};`)
-    .join('\n');
+  const updateFieldsStr = generateJavaFields(nonKeyFields.length > 0 ? nonKeyFields : fields);
 
   const updateRequest = `package ${packageName};
 
@@ -155,7 +198,7 @@ ${responseFields}
 `;
 
   // Search Request DTO
-  const searchFields = fields.map(f => `    private ${f.type} ${f.name};`).join('\n');
+  const searchFields = generateJavaFields(fields);
   const searchRequest = `package ${packageName};
 
 import lombok.AllArgsConstructor;
@@ -500,6 +543,50 @@ export function generateBackendServiceImpl(
     .map(f => `        entity.set${toPascalCase(f.name)}(request.get${toPascalCase(f.name)}());`)
     .join('\n');
 
+  // Programmatic validation checks for CreateRequest
+  const createValidationChecks = fields.map(f => {
+    const checks: string[] = [];
+    const fieldGetter = `request.get${toPascalCase(f.name)}()`;
+    const label = f.label && f.label.trim() !== '' ? f.label.trim() : toPascalCase(f.name).replace(/([a-z])([A-Z])/g, '$1 $2');
+    if (f.isRequired) {
+      if (f.type === 'String') {
+        checks.push(`        if (${fieldGetter} == null || ${fieldGetter}.trim().isEmpty()) {\n            throw new BusinessException("กรุณากรอกข้อมูล ${label}");\n        }`);
+      } else {
+        checks.push(`        if (${fieldGetter} == null) {\n            throw new BusinessException("กรุณากรอกข้อมูล ${label}");\n        }`);
+      }
+    }
+    if (f.type === 'String' && f.maxLength !== undefined && f.maxLength > 0) {
+      checks.push(`        if (${fieldGetter} != null && ${fieldGetter}.length() > ${f.maxLength}) {\n            throw new BusinessException("ความยาว ${label} ต้องไม่เกิน ${f.maxLength} ตัวอักษร");\n        }`);
+    }
+    return checks.join('\n');
+  }).filter(c => c.length > 0).join('\n');
+
+  const createValidationInline = createValidationChecks
+    ? `        // Field validations\n${createValidationChecks}\n\n`
+    : '';
+
+  // Programmatic validation checks for UpdateRequest
+  const updateValidationChecks = (nonKeyFields.length > 0 ? nonKeyFields : fields).map(f => {
+    const checks: string[] = [];
+    const fieldGetter = `request.get${toPascalCase(f.name)}()`;
+    const label = f.label && f.label.trim() !== '' ? f.label.trim() : toPascalCase(f.name).replace(/([a-z])([A-Z])/g, '$1 $2');
+    if (f.isRequired) {
+      if (f.type === 'String') {
+        checks.push(`        if (${fieldGetter} == null || ${fieldGetter}.trim().isEmpty()) {\n            throw new BusinessException("กรุณากรอกข้อมูล ${label}");\n        }`);
+      } else {
+        checks.push(`        if (${fieldGetter} == null) {\n            throw new BusinessException("กรุณากรอกข้อมูล ${label}");\n        }`);
+      }
+    }
+    if (f.type === 'String' && f.maxLength !== undefined && f.maxLength > 0) {
+      checks.push(`        if (${fieldGetter} != null && ${fieldGetter}.length() > ${f.maxLength}) {\n            throw new BusinessException("ความยาว ${label} ต้องไม่เกิน ${f.maxLength} ตัวอักษร");\n        }`);
+    }
+    return checks.join('\n');
+  }).filter(c => c.length > 0).join('\n');
+
+  const updateValidationInline = updateValidationChecks
+    ? `        // Field validations\n${updateValidationChecks}\n\n`
+    : '';
+
   return `package ${packageName};
 
 import com.gable.um.exception.BusinessException;
@@ -544,7 +631,7 @@ ${dtoResponseBuilder}
 
     @Override
     public void create${pascalName}(${pascalName}CreateRequest request, String userId) {
-        ${finalClassName} entity = ${finalClassName}.builder()
+${createValidationInline}        ${finalClassName} entity = ${finalClassName}.builder()
 ${entitySetters}
                 .build();
         ${camelName}Repository.save(entity);
@@ -555,7 +642,7 @@ ${entitySetters}
         ${finalClassName} entity = ${camelName}Repository.findById(${keyName})
                 .orElseThrow(() -> new BusinessException(MessageUtils.getMessageFromMsgCode("EC003")));
 
-${entityUpdateSetters}
+${updateValidationInline}${entityUpdateSetters}
         
         ${camelName}Repository.save(entity);
     }
@@ -575,7 +662,8 @@ ${entityUpdateSetters}
 export function generateFrontendModel(
   moduleName: string,
   moduleType: string,
-  fields: FieldDefinition[]
+  fields: FieldDefinition[],
+  frontendMode?: 'search' | 'report'
 ): string {
   if (!fields || fields.length === 0) {
     return '// Add at least one field to generate code.';
@@ -587,25 +675,18 @@ export function generateFrontendModel(
   
   const fieldsObjectFields = fields.map(f => `  ${toSnakeCase(f.name)}: "${f.name}",`).join('\n');
 
-  const createFieldsStr = fields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
-  const updateFieldsStr = fields.filter(f => !f.isKey).map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
+  let code = `export interface ${pascalName}Model {\n${modelFieldsStr}\n}\n\n` +
+             `export const ${pascalName}ModelFields = {\n${fieldsObjectFields}\n};\n`;
 
-  return `export interface ${pascalName}Model {
-${modelFieldsStr}
-}
+  if (frontendMode !== 'report') {
+    const createFieldsStr = fields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
+    const updateFieldsStr = fields.filter(f => !f.isKey).map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
+    
+    code += `\nexport interface ${pascalName}CreateModel {\n${createFieldsStr}\n}\n\n` +
+            `export interface ${pascalName}UpdateModel {\n${updateFieldsStr}\n}\n`;
+  }
 
-export const ${pascalName}ModelFields = {
-${fieldsObjectFields}
-};
-
-export interface ${pascalName}CreateModel {
-${createFieldsStr}
-}
-
-export interface ${pascalName}UpdateModel {
-${updateFieldsStr}
-}
-`;
+  return code;
 }
 
 // Generate Frontend Service
@@ -630,8 +711,7 @@ export const ${camelName}Service = {
 
 // Helper to map parameter types to appropriate Input elements
 function getFieldInputTemplate(f: FieldDefinition): string {
-  let label = toPascalCase(f.name);
-  label = label.replace(/([a-z])([A-Z])/g, '$1 $2');
+  let label = getDefaultLabel(f.name);
   
   if (f.type === 'Boolean') {
     return `                        <CheckboxForm\n` +
@@ -677,7 +757,8 @@ export function generateFrontendComponent(
   moduleName: string,
   moduleType: string,
   fields: FieldDefinition[],
-  buttons: ButtonsSelection
+  buttons: ButtonsSelection,
+  pageHeader?: string
 ): string {
   if (!fields || fields.length === 0) {
     return '// Add at least one field to generate code.';
@@ -795,7 +876,7 @@ export function generateFrontendComponent(
     `        <div className='flex flex-col h-full w-full bg-muted'>\n` +
     `            <Box className='w-[70rem] mx-auto p-6 md:p-10'>\n` +
     `                <CustomCard\n` +
-    `                    header='Manage ${pascalName}'\n` +
+    `                    header='${pageHeader || `Manage ${pascalName}`}'\n` +
     `                    className='w-full h-fit'\n` +
     `                >\n` +
     `                    <FormInput\n` +
@@ -825,7 +906,8 @@ export function generateFrontendSearchComponent(
   moduleName: string,
   moduleType: string,
   fields: FieldDefinition[],
-  buttons: ButtonsSelection
+  buttons: ButtonsSelection,
+  pageHeader?: string
 ): string {
   if (!fields || fields.length === 0) {
     return '// Add at least one field to generate code.';
@@ -841,27 +923,33 @@ export function generateFrontendSearchComponent(
   // Dynamic search fields (use first 3 fields as search criteria)
   const searchFields = fields.slice(0, 3);
   const dynamicFormsStr = searchFields.map(f => {
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : toPascalCase(f.name).replace(/([a-z])([A-Z])/g, '$1 $2');
-    if (f.type === 'Boolean') {
-      return `    {\n` +
-             `      fieldName: "${f.name}",\n` +
-             `      label: "${label}",\n` +
-             `      type: "checkbox",\n` +
-             `    }`;
-    } else if (f.type === 'LocalDate') {
-      return `    {\n` +
-             `      fieldName: "${f.name}",\n` +
-             `      label: "${label}",\n` +
-             `      type: "calendar",\n` +
-             `    }`;
-    } else {
-      return `    {\n` +
-             `      fieldName: "${f.name}",\n` +
-             `      label: "${label}",\n` +
-             `      type: "text",\n` +
-             `      maxLength: ${['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100},\n` +
-             `    }`;
+    const label = f.label && f.label.trim() !== '' ? f.label.trim() : getDefaultLabel(f.name);
+    const maxLen = f.maxLength || (['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100);
+    const uiType = f.frontendType || (
+      f.type === 'Boolean' ? 'checkbox' :
+      f.type === 'LocalDate' ? 'calendar' :
+      'text'
+    );
+    const props: string[] = [];
+    props.push(`      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)}`);
+    props.push(`      label: "${label}"`);
+    props.push(`      type: "${uiType}"`);
+    if (f.isRequired) {
+      props.push(`      isRequired: true`);
     }
+    if (uiType === 'calendar') {
+      const fromField = findMatchingFromField(f.name, fields);
+      const toField = findMatchingToField(f.name, fields);
+      if (fromField) {
+        props.push(`      minDate: searchForm.watch(${pascalName}ModelFields.${toSnakeCase(fromField)})`);
+      }
+      if (toField) {
+        props.push(`      maxDate: searchForm.watch(${pascalName}ModelFields.${toSnakeCase(toField)})`);
+      }
+    } else if (uiType === 'text') {
+      props.push(`      maxLength: ${maxLen}`);
+    }
+    return `    {\n` + props.join(',\n') + `,\n    }`;
   }).join(',\n');
 
   // Form buttons
@@ -889,7 +977,7 @@ export function generateFrontendSearchComponent(
     `import { useForm } from "react-hook-form";\n` +
     `import { z } from "zod";\n` +
     `import { zodResolver } from "@hookform/resolvers/zod";\n` +
-    `import { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}.model";\n` +
+    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\n` +
     `import {\n` +
     `  ${pascalName}SearchSchema,\n` +
     `  default${pascalName}SearchValues,\n` +
@@ -912,7 +1000,7 @@ export function generateFrontendSearchComponent(
     `import ${pascalName}FormModal from "./pop-ups/${camelName}-form-modal";\n` +
     `import { MODE } from "@/_configs/mode-configs/mode-config";\n\n` +
     `const ${pascalName} = () => {\n` +
-    `  const header = "หน้าจอสอบถามข้อมูล ${pascalName}";\n\n` +
+    `  const header = "${pageHeader || `หน้าจอสอบถามข้อมูล ${pascalName}`}";\n\n` +
     `  const [showResult, setShowResult] = useState<boolean>(false);\n` +
     `  const [dataTable, setDataTable] = useState<${pascalName}Model[]>([]);\n` +
     `  const [modalOpen, setModalOpen] = useState<boolean>(false);\n` +
@@ -1067,33 +1155,36 @@ export function generateFrontendDetailComponent(
 
   // Map fields to DynamicField items
   const dynamicFieldsStr = fields.map(f => {
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : toPascalCase(f.name).replace(/([a-z])([A-Z])/g, '$1 $2');
-    let extra = '';
+    const label = f.label && f.label.trim() !== '' ? f.label.trim() : getDefaultLabel(f.name);
+    const maxLen = f.maxLength || (['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100);
+    const uiType = f.frontendType || (
+      f.type === 'Boolean' ? 'checkbox' :
+      f.type === 'LocalDate' ? 'calendar' :
+      'text'
+    );
+    const props: string[] = [];
+    props.push(`      type: '${uiType}'`);
+    props.push(`      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)}`);
+    props.push(`      label: '${label}'`);
+    if (f.isKey || f.isRequired) {
+      props.push(`      isRequired: true`);
+    }
     if (f.isKey) {
-      extra += `,\n      disable: mode === MODE.EDIT`;
+      props.push(`      disable: mode === MODE.EDIT`);
     }
-    if (f.type === 'Boolean') {
-      return `    {\n` +
-             `      type: 'checkbox',\n` +
-             `      fieldName: '${f.name}',\n` +
-             `      label: '${label}'${extra}\n` +
-             `    }`;
-    } else if (f.type === 'LocalDate') {
-      return `    {\n` +
-             `      type: 'calendar',\n` +
-             `      fieldName: '${f.name}',\n` +
-             `      label: '${label}',\n` +
-             `      isRequired: true${extra}\n` +
-             `    }`;
-    } else {
-      return `    {\n` +
-             `      type: 'text',\n` +
-             `      fieldName: '${f.name}',\n` +
-             `      label: '${label}',\n` +
-             `      isRequired: true,\n` +
-             `      maxLength: ${['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100}${extra}\n` +
-             `    }`;
+    if (uiType === 'calendar') {
+      const fromField = findMatchingFromField(f.name, fields);
+      const toField = findMatchingToField(f.name, fields);
+      if (fromField) {
+        props.push(`      minDate: modalForm.watch(${pascalName}ModelFields.${toSnakeCase(fromField)})`);
+      }
+      if (toField) {
+        props.push(`      maxDate: modalForm.watch(${pascalName}ModelFields.${toSnakeCase(toField)})`);
+      }
+    } else if (uiType === 'text') {
+      props.push(`      maxLength: ${maxLen}`);
     }
+    return `    {\n` + props.join(',\n') + `,\n    }`;
   }).join(',\n');
 
   // Modal Save button, Clear, Close
@@ -1130,6 +1221,7 @@ export function generateFrontendDetailComponent(
     `  ${pascalName}CreateModel,\n` +
     `  ${pascalName}Model,\n` +
     `  ${pascalName}UpdateModel,\n` +
+    `  ${pascalName}ModelFields,\n` +
     `} from "@/_models/${typeLower}/${camelName}.model";\n` +
     `import {\n` +
     `  ${pascalName}FormSchema,\n` +
@@ -1287,7 +1379,8 @@ export function generateFrontendReportComponent(
   fields: FieldDefinition[],
   buttons: ButtonsSelection,
   reportFileName: string,
-  reportEngine: 'direct' | 'crystal' | 'jasper' = 'direct'
+  reportEngine: 'direct' | 'crystal' | 'jasper' = 'direct',
+  pageHeader?: string
 ): string {
   if (!fields || fields.length === 0) {
     return '// Add at least one field to generate code.';
@@ -1301,69 +1394,96 @@ export function generateFrontendReportComponent(
   const camelReportName = toCamelCase(finalReportName);
   const pascalReportName = toPascalCase(finalReportName);
   const kebabReportName = toKebabCase(finalReportName);
+  const reportDisplayTitle = toPascalCase(finalReportName).replace(/([a-z])([A-Z])/g, '$1 $2');
 
   // Map fields to DynamicField items
   const dynamicFieldsStr = fields.map(f => {
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : toPascalCase(f.name).replace(/([a-z])([A-Z])/g, '$1 $2');
+    const label = f.label && f.label.trim() !== '' ? f.label.trim() : getDefaultLabel(f.name);
+    let uiType = f.frontendType || (
+      f.type === 'Boolean' ? 'checkbox' :
+      f.type === 'LocalDate' ? 'calendar' :
+      'text'
+    );
     if (f.name.toLowerCase().endsWith('status') || f.name.toLowerCase() === 'status') {
-      return `    {\n` +
-             `      type: 'select',\n` +
-             `      fieldName: '${f.name}',\n` +
-             `      label: '${label}',\n` +
-             `      options: dropdowns.${f.name}Options,\n` +
-             `      isRequired: ${f.isKey ? 'true' : 'false'},\n` +
-             `    }`;
-    } else if (f.type === 'Boolean') {
-      return `    {\n` +
-             `      type: 'checkbox',\n` +
-             `      fieldName: '${f.name}',\n` +
-             `      label: '${label}',\n` +
-             `    }`;
-    } else if (f.type === 'LocalDate') {
-      return `    {\n` +
-             `      type: 'calendar',\n` +
-             `      fieldName: '${f.name}',\n` +
-             `      label: '${label}',\n` +
-             `    }`;
-    } else {
-      return `    {\n` +
-             `      type: 'text',\n` +
-             `      fieldName: '${f.name}',\n` +
-             `      label: '${label}',\n` +
-             `      maxLength: ${['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100},\n` +
-             `    }`;
+      uiType = 'select';
     }
+
+    const props: string[] = [];
+    props.push(`      type: '${uiType}'`);
+    props.push(`      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)}`);
+    props.push(`      label: '${label}'`);
+
+    if (uiType === 'select' || uiType === 'radio') {
+      props.push(`      options: dropdowns.${f.name}Options`);
+    }
+
+    if (f.isKey || f.isRequired) {
+      props.push(`      isRequired: true`);
+    }
+
+    if (uiType === 'calendar') {
+      const fromField = findMatchingFromField(f.name, fields);
+      const toField = findMatchingToField(f.name, fields);
+      if (fromField) {
+        props.push(`      minDate: searchForm.watch(${pascalName}ModelFields.${toSnakeCase(fromField)})`);
+      }
+      if (toField) {
+        props.push(`      maxDate: searchForm.watch(${pascalName}ModelFields.${toSnakeCase(toField)})`);
+      }
+    } else if (uiType === 'text') {
+      const maxLen = f.maxLength || (['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100);
+      props.push(`      maxLength: ${maxLen}`);
+    }
+
+    return `    {\n` + props.join(',\n') + `,\n    }`;
   }).join(',\n');
 
-  // Status dropdown config if status exists
-  const statusField = fields.find(f => f.name.toLowerCase().endsWith('status') || f.name.toLowerCase() === 'status');
-  const dropdownState = statusField 
-    ? `  const [dropdowns, setDropdowns] = useState({\n` +
-      `    ${statusField.name}Options: [] as DropdownModel[],\n` +
-      `  });`
-    : `  const [dropdowns, setDropdowns] = useState({\n` +
-      `    statusOptions: [] as DropdownModel[],\n` +
-      `  });`;
+  // Dropdown config if select/radio fields exist
+  const dropdownFields = fields.filter(f => {
+    const uiType = f.frontendType || (
+      f.type === 'Boolean' ? 'checkbox' :
+      f.type === 'LocalDate' ? 'calendar' :
+      'text'
+    );
+    const isSelect = f.name.toLowerCase().endsWith('status') || f.name.toLowerCase() === 'status' || uiType === 'select';
+    const isRadio = uiType === 'radio';
+    return isSelect || isRadio;
+  });
 
-  const dropdownFetch = statusField
+  let dropdownImports = '';
+  if (dropdownFields.length > 0) {
+    dropdownImports = `import { dropdownService } from "@/_service/um/dropdown.service";\n` +
+                      `import { DropdownModel } from "@/_models/form.model";\n`;
+  }
+
+  const dropdownState = dropdownFields.length > 0
+    ? `  const [dropdowns, setDropdowns] = useState({\n` +
+      dropdownFields.map(f => `    ${f.name}Options: [] as DropdownModel[],`).join('\n') + `\n` +
+      `  });`
+    : '';
+
+  const dropdownFetch = dropdownFields.length > 0
     ? `  useEffect(() => {\n` +
-      `    Promise.all([\n` +
-      `      dropdownService.getCtSysConfigDropdown("MK103", { showCode: true, required: false }),\n` +
-      `    ])\n` +
-      `      .then(([statusRes]) => {\n` +
-      `        setDropdowns(() => ({\n` +
-      `          ${statusField.name}Options: (statusRes.data ?? []).filter(\n` +
-      `            (option) => option.value !== null && option.value !== ""\n` +
-      `          ),\n` +
-      `        }));\n` +
-      `      })\n` +
-      `      .catch((err) => {\n` +
-      `        errorAlert(err);\n` +
-      `      });\n` +
-      `  }, [errorAlert]);`
-    : `  useEffect(() => {\n` +
-      `    // Fetch dropdown values if needed\n` +
-      `  }, [errorAlert]);`;
+      `    fetchDropdowns();\n` +
+      `  }, []);\n\n` +
+      `  const fetchDropdowns = async () => {\n` +
+      `    try {\n` +
+      `      // TODO: Fetch dropdown values for: ${dropdownFields.map(f => f.name).join(', ')}\n` +
+      `      /*\n` +
+      `      const [${dropdownFields.map(f => `${f.name}Res`).join(', ')}] = await Promise.all([\n` +
+      dropdownFields.map(f => `        dropdownService.getCtSysConfigDropdown("CODE_${f.name.toUpperCase()}", { showCode: true, required: ${f.isRequired ? 'true' : 'false'} }),`).join('\n') + `\n` +
+      `      ]);\n` +
+      `      setDropdowns(() => ({\n` +
+      dropdownFields.map(f => `        ${f.name}Options: (${f.name}Res.data ?? []).filter(\n` +
+                              `          (option) => option.value !== null && option.value !== ""\n` +
+                              `        ),`).join('\n') + `\n` +
+      `      }));\n` +
+      `      */\n` +
+      `    } catch (err) {\n` +
+      `      errorAlert(err);\n` +
+      `    }\n` +
+      `  };`
+    : '';
 
   // Buttons configurations
   const renderedButtons: string[] = [];
@@ -1421,8 +1541,8 @@ export function generateFrontendReportComponent(
                    `    const values = FormHelper.normalizeSearchParams(rawValues) as any;\n\n` +
                    `    setLoading(true);\n` +
                    `    try {\n` +
-                   `      const res = await ${camelName}Service.export${pascalName}Report(values);\n` +
-                   `      const fileName = resolveReportFileName('${pascalName} Report', 'xlsx', res.headers?.["content-disposition"]);\n` +
+                   `      const res = await ${camelName}Service.export${pascalReportName}(values);\n` +
+                   `      const fileName = resolveReportFileName('${reportDisplayTitle}', 'xlsx', res.headers?.["content-disposition"]);\n` +
                    `      const blob = new Blob([res.data], { type: "application/octet-stream" });\n` +
                    `      downloadBlob(blob, fileName);\n` +
                    `    } catch (err) {\n` +
@@ -1476,7 +1596,7 @@ export function generateFrontendReportComponent(
 
   let reportModalComponent = '';
   if (reportEngine === 'crystal') {
-    reportModalComponent = `\n      <CrystalReportModal\n` +
+    reportModalComponent = `      <CrystalReportModal\n` +
                            `        open={reportOpen}\n` +
                            `        onOpenChange={setReportOpen}\n` +
                            `        reportName="${reportFileName}"\n` +
@@ -1484,7 +1604,7 @@ export function generateFrontendReportComponent(
                            `        title={header}\n` +
                            `      />`;
   } else if (reportEngine === 'jasper') {
-    reportModalComponent = `\n      <JasperReportModal\n` +
+    reportModalComponent = `      <JasperReportModal\n` +
                            `        open={reportOpen}\n` +
                            `        onOpenChange={setReportOpen}\n` +
                            `        reportCode="${reportFileName}"\n` +
@@ -1492,6 +1612,8 @@ export function generateFrontendReportComponent(
                            `        title={header}\n` +
                            `      />`;
   }
+
+  const modalJSX = reportModalComponent ? `\n${reportModalComponent}` : '';
 
   return `import {\n` +
          `  useState,\n` +
@@ -1503,21 +1625,25 @@ export function generateFrontendReportComponent(
          `import { CustomCard } from "@/components/layout/Form";\n` +
          `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";\n` +
          `import BoxContainer from "@/components/ui/box-container";\n\n` +
-         `import { dropdownService } from "@/_service/um/dropdown.service";\n` +
+         `${dropdownImports}` +
          `${directImports}` +
          `${reportImports}\n` +
          `import { useAlert } from "@/_providers/alert-provider";\n` +
-         `import { DropdownModel } from "@/_models/form.model";\n` +
+         `import { ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\n` +
          `import {\n` +
          `  ${pascalReportName}Schema,\n` +
          `  default${pascalReportName}Values,\n` +
          `} from "./schemas/${reportFileName}Schema";\n\n` +
          `function ${camelReportName}() {\n` +
-         `  const header = "รายงานข้อมูล ${pascalName}";\n\n` +
-         `  ${dropdownState}\n` +
-         `  const { errorAlert, warningToast } = useAlert();\n` +
-         `  ${stateDeclarations}\n\n` +
-         `  ${dropdownFetch}\n\n` +
+         `${[
+            `  const header = "${pageHeader || `รายงานข้อมูล ${pascalName}`}";`,
+            dropdownState,
+            [
+              `  const { errorAlert, warningToast } = useAlert();`,
+              stateDeclarations
+            ].filter(Boolean).join('\n'),
+            dropdownFetch
+          ].filter(Boolean).join('\n\n')}\n\n` +
          `  const dynamicForm: DynamicField[] = [\n` +
          `${dynamicFieldsStr}\n` +
          `  ]\n\n` +
@@ -1550,12 +1676,37 @@ export function generateFrontendReportComponent(
          `            />\n` +
          `          </BoxContainer>\n` +
          `        </CustomCard>\n` +
-         `      </div>\n` +
-      `      ${reportModalComponent}\n` +
+         `      </div>${modalJSX}\n` +
          `    </div>\n` +
          `  )\n` +
          `}\n\n` +
          `export default ${camelReportName};\n`;
+}
+
+function getZodSchemaField(f: FieldDefinition): string {
+  const isReq = f.isRequired ?? false;
+  const maxLen = f.maxLength;
+  if (f.type === 'String') {
+    if (maxLen !== undefined && maxLen > 0) {
+      if (isReq) {
+        return `ZodHelper.getStringField(true, 1, { max: ${maxLen} })`;
+      } else {
+        return `ZodHelper.getStringField(false, undefined, { max: ${maxLen} })`;
+      }
+    } else {
+      if (isReq) {
+        return `ZodHelper.getStringField(true, 1)`;
+      } else {
+        return `ZodHelper.getStringField()`;
+      }
+    }
+  } else if (f.type === 'Boolean') {
+    return `ZodHelper.getStringBooleanCheckboxField(${isReq ? 'true' : ''})`;
+  } else if (f.type === 'LocalDate') {
+    return `ZodHelper.getPreprocessedDateField(${isReq ? 'true' : ''})`;
+  } else {
+    return `ZodHelper.toNumber(${isReq ? 'true' : ''})`;
+  }
 }
 
 // Generate separate search schema file
@@ -1566,15 +1717,7 @@ export function generateFrontendSearchSchema(
   const pascalName = toPascalCase(moduleName);
 
   const zodFields = fields.map(f => {
-    if (f.type === 'String') {
-      return `  ${f.name}: ZodHelper.getStringField()`;
-    } else if (f.type === 'Boolean') {
-      return `  ${f.name}: ZodHelper.getStringBooleanCheckboxField()`;
-    } else if (f.type === 'LocalDate') {
-      return `  ${f.name}: ZodHelper.getPreprocessedDateField()`;
-    } else {
-      return `  ${f.name}: ZodHelper.toNumber()`;
-    }
+    return `  ${f.name}: ${getZodSchemaField(f)}`;
   }).join(',\n');
 
   const defaults = fields.map(f => {
@@ -1604,7 +1747,7 @@ export function generateFrontendSearchTable(
   const typeLower = moduleType.toLowerCase();
 
   const columnsDef = fields.map(f => {
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : toPascalCase(f.name).replace(/([a-z])([A-Z])/g, '$1 $2');
+    const label = f.label && f.label.trim() !== '' ? f.label.trim() : getDefaultLabel(f.name);
     if (f.type === 'LocalDate') {
       return `          constructDateColumn({\n` +
              `            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n` +
@@ -1676,15 +1819,7 @@ export function generateFrontendReportSchema(
   const pascalReportName = toPascalCase(finalReportName);
 
   const zodFields = fields.map(f => {
-    if (f.type === 'String') {
-      return `  ${f.name}: ZodHelper.getStringField()`;
-    } else if (f.type === 'Boolean') {
-      return `  ${f.name}: ZodHelper.getStringBooleanCheckboxField()`;
-    } else if (f.type === 'LocalDate') {
-      return `  ${f.name}: ZodHelper.getPreprocessedDateField()`;
-    } else {
-      return `  ${f.name}: ZodHelper.toNumber()`;
-    }
+    return `  ${f.name}: ${getZodSchemaField(f)}`;
   }).join(',\n');
 
   const defaults = fields.map(f => {
@@ -1711,15 +1846,7 @@ export function generateFrontendFormSchema(
   const pascalName = toPascalCase(moduleName);
 
   const zodFields = fields.map(f => {
-    if (f.type === 'String') {
-      return `  ${f.name}: ZodHelper.getStringField(true, 1)`;
-    } else if (f.type === 'Boolean') {
-      return `  ${f.name}: ZodHelper.getStringBooleanCheckboxField()`;
-    } else if (f.type === 'LocalDate') {
-      return `  ${f.name}: ZodHelper.getPreprocessedDateField(true)`;
-    } else {
-      return `  ${f.name}: ZodHelper.toNumber(true)`;
-    }
+    return `  ${f.name}: ${getZodSchemaField(f)}`;
   }).join(',\n');
 
   const defaults = fields.map(f => {

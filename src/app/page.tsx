@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import styles from './page.module.css';
+import Swal from 'sweetalert2';
 import {
   toPascalCase,
   toCamelCase,
@@ -26,25 +27,27 @@ import {
   generateFrontendReportSchema,
   generateFrontendFormSchema,
   FieldDefinition,
-  ButtonsSelection
+  ButtonsSelection,
+  getDefaultLabel
 } from '@/lib/generator';
 
 export default function GeneratorPage() {
   // Input states
-  const [moduleName, setModuleName] = useState('DownType');
-  const [moduleType, setModuleType] = useState('mk');
-  const [tableName, setTableName] = useState('MK_DOWN_TYPE');
-  const [className, setClassName] = useState('MkDownType');
-  const [reportFileName, setReportFileName] = useState('downType');
+  const [moduleName, setModuleName] = useState('');
+  const [moduleType, setModuleType] = useState('');
+  const [tableName, setTableName] = useState('');
+  const [className, setClassName] = useState('');
+  const [reportFileName, setReportFileName] = useState('');
   const [frontendMode, setFrontendMode] = useState<'search' | 'report'>('search');
   const [reportEngine, setReportEngine] = useState<'direct' | 'crystal' | 'jasper'>('direct');
+  const [pageHeader, setPageHeader] = useState('');
 
   // Form buttons selection state
   const [buttons, setButtons] = useState<ButtonsSelection>({
-    search: true,
-    clear: true,
-    save: true,
-    close: true,
+    search: false,
+    clear: false,
+    save: false,
+    close: false,
     add: false,
     print: false,
     printPdf: false,
@@ -70,6 +73,16 @@ export default function GeneratorPage() {
       setTableName(`${typePrefix}_${toSnakeCase(cleaned)}`);
       setClassName(`Mk${toPascalCase(cleaned)}`);
       setReportFileName(toCamelCase(cleaned));
+
+      // Sync pageHeader if empty or matches previous default template
+      const pascal = toPascalCase(cleaned);
+      const oldPascal = toPascalCase(moduleName);
+      const defaultSearch = `หน้าจอสอบถามข้อมูล ${oldPascal}`;
+      const defaultReport = `รายงานข้อมูล ${oldPascal}`;
+      const isDefaultHeader = !pageHeader || pageHeader === defaultSearch || pageHeader === defaultReport;
+      if (isDefaultHeader) {
+        setPageHeader(frontendMode === 'report' ? `รายงานข้อมูล ${pascal}` : `หน้าจอสอบถามข้อมูล ${pascal}`);
+      }
 
       setFields(prev => {
         const next = [...prev];
@@ -97,10 +110,28 @@ export default function GeneratorPage() {
   const handleFieldChange = (index: number, key: keyof FieldDefinition, value: any) => {
     setFields(prev => {
       const next = [...prev];
+      const oldField = prev[index];
       next[index] = { ...next[index], [key]: value };
       
       if (key === 'name') {
         next[index].columnName = toSnakeCase(value);
+        
+        // Auto-default label if it is currently empty or matches the old name's default
+        const oldDefault = oldField.name ? getDefaultLabel(oldField.name) : '';
+        const currentLabel = oldField.label || '';
+        if (currentLabel === '' || currentLabel === oldDefault) {
+          next[index].label = value ? getDefaultLabel(value) : '';
+        }
+      }
+
+      if (key === 'frontendType') {
+        // Auto-default backend type based on frontendType selection
+        if (value === 'text') next[index].type = 'String';
+        else if (value === 'number') next[index].type = 'Integer';
+        else if (value === 'calendar') next[index].type = 'LocalDate';
+        else if (value === 'checkbox') next[index].type = 'Boolean';
+        else if (value === 'select') next[index].type = 'String';
+        else if (value === 'radio') next[index].type = 'String';
       }
       return next;
     });
@@ -109,14 +140,19 @@ export default function GeneratorPage() {
   const addField = () => {
     setFields(prev => {
       const isFirst = prev.length === 0;
+      const defaultName = isFirst ? toCamelCase(moduleName) : 'newField';
+      const defaultLabel = defaultName ? getDefaultLabel(defaultName) : '';
       return [
         ...prev,
         { 
-          name: isFirst ? toCamelCase(moduleName) : 'newField', 
+          name: defaultName, 
           type: 'String', 
+          frontendType: 'text',
           columnName: isFirst ? toSnakeCase(moduleName) : 'NEW_FIELD', 
           isKey: isFirst,
-          label: ''
+          label: defaultLabel,
+          isRequired: false,
+          maxLength: undefined
         }
       ];
     });
@@ -133,6 +169,7 @@ export default function GeneratorPage() {
     const tbl = tableName || 'MK_EXAMPLE';
     const cls = className || `Mk${toPascalCase(name)}`;
     const camelName = toCamelCase(name);
+    const finalHeader = pageHeader || (frontendMode === 'report' ? `รายงานข้อมูล ${toPascalCase(name)}` : `หน้าจอสอบถามข้อมูล ${toPascalCase(name)}`);
 
     if (activeTab === 'backend') {
       const dtos = generateBackendDTOs(name, type, fields);
@@ -206,17 +243,12 @@ export default function GeneratorPage() {
         case 'model':
           return {
             path: `FrontEnd/_models/${type.toLowerCase()}/${camelName}.model.ts`,
-            code: generateFrontendModel(name, type, fields)
-          };
-        case 'component':
-          return {
-            path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/${camelName}-single.tsx`,
-            code: generateFrontendComponent(name, type, fields, buttons)
+            code: generateFrontendModel(name, type, fields, frontendMode)
           };
         case 'searchViewPage':
           return {
             path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/${camelName}.tsx`,
-            code: generateFrontendSearchComponent(name, type, fields, buttons)
+            code: generateFrontendSearchComponent(name, type, fields, buttons, finalHeader)
           };
         case 'searchTable':
           return {
@@ -241,7 +273,7 @@ export default function GeneratorPage() {
         case 'reportComponent':
           return {
             path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/${reportNameCamel}.tsx`,
-            code: generateFrontendReportComponent(name, type, fields, buttons, reportFileName, reportEngine)
+            code: generateFrontendReportComponent(name, type, fields, buttons, reportFileName, reportEngine, finalHeader)
           };
         case 'reportSchema':
           return {
@@ -300,7 +332,8 @@ export default function GeneratorPage() {
           buttons,
           fields,
           frontendMode,
-          reportEngine
+          reportEngine,
+          pageHeader
         })
       });
       const data = await res.json();
@@ -387,6 +420,16 @@ export default function GeneratorPage() {
               onChange={(e) => {
                 const modeVal = e.target.value as 'search' | 'report';
                 setFrontendMode(modeVal);
+
+                // Sync pageHeader on mode change
+                const pascal = toPascalCase(moduleName);
+                const defaultSearch = `หน้าจอสอบถามข้อมูล ${pascal}`;
+                const defaultReport = `รายงานข้อมูล ${pascal}`;
+                const isDefaultHeader = !pageHeader || pageHeader === defaultSearch || pageHeader === defaultReport;
+                if (isDefaultHeader) {
+                  setPageHeader(modeVal === 'report' ? `รายงานข้อมูล ${pascal || 'Example'}` : `หน้าจอสอบถามข้อมูล ${pascal || 'Example'}`);
+                }
+
                 if (modeVal === 'report') {
                   setButtons(prev => ({
                     ...prev,
@@ -435,6 +478,17 @@ export default function GeneratorPage() {
               </select>
             </div>
           )}
+
+          <div className={styles.formGroup}>
+            <label htmlFor="inputPageHeader">Page Header / Title</label>
+            <input
+              id="inputPageHeader"
+              type="text"
+              value={pageHeader}
+              onChange={(e) => setPageHeader(e.target.value)}
+              placeholder="e.g. หน้าจอสอบถามข้อมูลประเภทผู้ลงทะเบียน"
+            />
+          </div>
 
           <div className={styles.formGroup}>
             <label htmlFor="inputClassName">Entity Class Name</label>
@@ -505,7 +559,30 @@ export default function GeneratorPage() {
         <div className={styles.fieldsSection}>
           <div className={styles.sectionTitle}>
             <span>Fields / Parameters</span>
-            <button className={styles.btnAddField} onClick={addField}>+ Add Field</button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className={styles.btnAddField} onClick={addField}>+ Add Field</button>
+              <button 
+                className={styles.btnClearFields} 
+                onClick={() => {
+                  Swal.fire({
+                    title: 'Confirm Clear',
+                    text: 'Are you sure you want to clear all fields?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#ef4444',
+                    cancelButtonColor: '#64748b',
+                    confirmButtonText: 'Clear All',
+                    cancelButtonText: 'Cancel'
+                  }).then((result) => {
+                    if (result.isConfirmed) {
+                      setFields([]);
+                    }
+                  });
+                }}
+              >
+                Clear
+              </button>
+            </div>
           </div>
 
           <div className={styles.fieldsContainer}>
@@ -526,10 +603,23 @@ export default function GeneratorPage() {
                       style={{ flex: 2 }}
                     />
                     <select
+                      value={field.frontendType || 'text'}
+                      onChange={(e) => handleFieldChange(idx, 'frontendType', e.target.value)}
+                      title="Frontend Type"
+                      style={{ flex: 1.3 }}
+                    >
+                      <option value="text">text</option>
+                      <option value="number">number</option>
+                      <option value="calendar">calendar</option>
+                      <option value="checkbox">checkbox</option>
+                      <option value="select">select</option>
+                      <option value="radio">radio</option>
+                    </select>
+                    <select
                       value={field.type}
                       onChange={(e) => handleFieldChange(idx, 'type', e.target.value)}
-                      title="Field Type"
-                      style={{ flex: 1.5 }}
+                      title="Backend Type"
+                      style={{ flex: 1.3 }}
                     >
                       <option value="String">String</option>
                       <option value="Integer">Integer</option>
@@ -556,14 +646,31 @@ export default function GeneratorPage() {
                       &times;
                     </button>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px', width: '100%' }}>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%' }}>
                     <input
                       type="text"
                       value={field.label || ''}
                       onChange={(e) => handleFieldChange(idx, 'label', e.target.value)}
-                      placeholder="UI Label (e.g. คำอธิบาย, Start Date)"
+                      placeholder="UI Label (e.g. คำอธิบาย)"
                       title="UI Label"
-                      style={{ width: '100%', fontSize: '0.8rem', padding: '4px 8px' }}
+                      style={{ flex: 2.5, fontSize: '0.8rem', padding: '4px 8px' }}
+                    />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', cursor: 'pointer', flex: 1 }}>
+                      <input
+                        type="checkbox"
+                        checked={field.isRequired || false}
+                        onChange={(e) => handleFieldChange(idx, 'isRequired', e.target.checked)}
+                        title="Is Required"
+                      />
+                      Req
+                    </label>
+                    <input
+                      type="number"
+                      value={field.maxLength || ''}
+                      onChange={(e) => handleFieldChange(idx, 'maxLength', e.target.value ? parseInt(e.target.value) : undefined)}
+                      placeholder="Max len"
+                      title="Max Length"
+                      style={{ flex: 1.2, fontSize: '0.8rem', padding: '4px 8px' }}
                     />
                   </div>
                 </div>
@@ -649,7 +756,6 @@ export default function GeneratorPage() {
                 <button className={`${styles.subTabBtn} ${activeSubTab === 'reportSchema' ? styles.active : ''}`} onClick={() => setActiveSubTab('reportSchema')}>Report Schema</button>
               </>
             )}
-            <button className={`${styles.subTabBtn} ${activeSubTab === 'component' ? styles.active : ''}`} onClick={() => setActiveSubTab('component')}>Single Page View</button>
           </div>
         )}
 

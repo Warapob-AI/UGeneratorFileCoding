@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
 
 :root {
   --font-sans: 'Outfit', sans-serif;
@@ -25,7 +25,7 @@
   --success-glow: rgba(0, 176, 116, 0.1);
   --error: #ef4444;
   
-  --sidebar-width: 340px;
+  --sidebar-width: 480px;
 }
 
 * {
