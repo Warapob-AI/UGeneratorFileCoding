@@ -1,0 +1,372 @@
+.container {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  height: 100vh;
+  width: 100vw;
+  gap: 24px;
+  padding: 24px;
+  background: var(--bg-gradient);
+  overflow: hidden;
+}
+
+/* Sidebar Styling */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 20px;
+  padding: 24px;
+  overflow: hidden;
+}
+
+.titleSection {
+  margin-bottom: 4px;
+}
+
+.titleSection h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.titleSection h1 svg {
+  color: var(--accent-primary);
+}
+
+.titleSection p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.sectionTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 6px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.formGroup label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.formGroup input, .formGroup select {
+  border: 1px solid #d1d5db;
+  background-color: #f9fafb;
+}
+
+/* Fields list takes up remaining height */
+.fieldsSection {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.fieldsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 40px 40px;
+  gap: 6px;
+  align-items: center;
+}
+
+.fieldRow input, .fieldRow select {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  border: 1px solid #e5e7eb;
+}
+
+.checkboxWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.checkboxWrapper input {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-primary);
+}
+
+.btnDeleteField {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 6px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.btnDeleteField:hover {
+  background: var(--error);
+  color: white;
+}
+
+.btnAddField {
+  background: rgba(0, 176, 116, 0.08);
+  color: var(--accent-primary);
+  border: 1px dashed var(--accent-primary);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btnAddField:hover {
+  background: var(--accent-primary);
+  color: white;
+}
+
+/* Main Workspace area */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 24px;
+}
+
+.workspaceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.tabControls {
+  display: flex;
+  gap: 8px;
+}
+
+.tabBtn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: var(--text-secondary);
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.tabBtn:hover {
+  background: #e2e8f0;
+  color: var(--text-primary);
+}
+
+.tabBtn.active {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+  box-shadow: 0 4px 12px var(--accent-primary-glow);
+}
+
+.subTabControls {
+  display: flex;
+  gap: 4px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+
+.subTabBtn {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  transition: all 0.2s ease;
+}
+
+.subTabBtn:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.subTabBtn.active {
+  background: #ffffff;
+  color: var(--accent-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  border: 1px solid rgba(0, 176, 116, 0.1);
+}
+
+.btnGenerate {
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  color: white;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px var(--accent-primary-glow);
+  transition: all 0.2s ease;
+}
+
+.btnGenerate:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 176, 116, 0.4);
+}
+
+.btnGenerate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Code Preview Area (Premium Dark Slate Editor Contrast) */
+.previewContainer {
+  position: relative;
+  flex: 1;
+  background: #0f172a; /* Dark slate */
+  border-radius: 12px;
+  border: 1px solid #1e293b;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.previewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+}
+
+.filePathDisplay {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: #94a3b8;
+}
+
+.btnCopy {
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btnCopy:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.codeArea {
+  flex: 1;
+  padding: 20px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #e2e8f0;
+  overflow: auto;
+  white-space: pre;
+}
+
+/* Toast Alerts */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #ffffff;
+  border: 1px solid var(--accent-primary);
+  box-shadow: 0 10px 30px rgba(0, 176, 116, 0.15);
+  padding: 16px 24px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 1000;
+  max-width: 400px;
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.toast.success {
+  border-left: 4px solid var(--success);
+}
+
+.toast.error {
+  border-color: var(--error);
+  border-left: 4px solid var(--error);
+  box-shadow: 0 10px 30px rgba(239, 68, 68, 0.15);
+}
+
+.toastText {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-muted);
+  gap: 12px;
+}
+
+.emptyState svg {
+  width: 48px;
+  height: 48px;
+  opacity: 0.4;
+  color: var(--accent-primary);
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
