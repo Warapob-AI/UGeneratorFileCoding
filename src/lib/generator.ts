@@ -38,18 +38,32 @@ export function getDefaultLabel(name: string): string {
 }
 
 export function findMatchingFromField(fieldName: string, allFields: FieldDefinition[]): string | undefined {
-  const lower = fieldName.toLowerCase();
-  if (lower.endsWith('to')) {
-    const prefix = fieldName.slice(0, -2);
-    const matching = allFields.find(f => {
-      const fLower = f.name.toLowerCase();
-      return fLower === (prefix + 'from').toLowerCase() || fLower === (prefix + 'From').toLowerCase();
-    });
-    return matching?.name;
-  }
-  return undefined;
-}
+  if (!fieldName) return undefined;
 
+  const lower = fieldName.toLowerCase();
+  let prefix = '';
+
+  // ตรวจสอบ Suffix และ Slice ความยาวตามจริง (to = 2 ตัวอักษร, ถึง = 3 ตัวอักษร)
+  if (lower.endsWith('to')) {
+    prefix = fieldName.slice(0, -2);
+  } else if (lower.endsWith('ถึง')) {
+    prefix = fieldName.slice(0, -3);
+  } else {
+    return undefined;
+  }
+
+  // เตรียมคำค้นหาที่เป็นไปได้ในรูปแบบตัวพิมพ์เล็ก (Lowercase)
+  const targetFromLower = (prefix + 'from').toLowerCase();
+  const targetStartLower = (prefix + 'ตั้งแต่').toLowerCase();
+
+  // ค้นหาฟิลด์ที่มีชื่อตรงกับเงื่อนไข
+  const matching = allFields.find(f => {
+    const fLower = f.name.toLowerCase();
+    return fLower === targetFromLower || fLower === targetStartLower;
+  });
+
+  return matching?.name;
+}
 export function findMatchingToField(fieldName: string, allFields: FieldDefinition[]): string | undefined {
   const lower = fieldName.toLowerCase();
   if (lower.endsWith('from')) {
@@ -72,6 +86,7 @@ export interface FieldDefinition {
   label?: string;
   isRequired?: boolean;
   maxLength?: number;
+  disable?: boolean; // ข้อที่ 1: เพิ่ม property สำหรับการสั่งปิดควบคุม Component หน้าบ้าน
 }
 
 export interface ButtonsSelection {
@@ -83,6 +98,15 @@ export interface ButtonsSelection {
   print: boolean;
   printPdf: boolean;
   printExcel: boolean;
+}
+
+export interface GeneratorOptions {
+  hasDealerSearch?: boolean;      // ข้อที่ 2: เลือกว่าเปิดระบบค้นหา Dealer Popup หรือไม่
+  useSearchStore?: boolean;       // ข้อที่ 4: เลือกว่าจะเอา Zustand Store หรือไม่
+  programId?: string;             // ข้อที่ 5: รหัสโปรแกรม เช่น COPR07
+  legacyUrl?: string;             // ข้อที่ 5: URL Struts เดิม เช่น /COPR07InterestSubsidyReport.do
+  routingPath?: string;           // ข้อที่ 5: path หน้าบ้านใหม่ เช่น /interestSubsidyReport
+  roleCode?: string;              // ข้อที่ 5: สิทธิ์ระบบงาน เช่น SKL-IT-ASS
 }
 
 // Maps Java types to TypeScript types
@@ -107,11 +131,7 @@ export interface GeneratedDTOs {
   searchRequest: string;
 }
 
-export function generateBackendDTOs(
-  moduleName: string,
-  moduleType: string,
-  fields: FieldDefinition[]
-): GeneratedDTOs {
+export function generateBackendDTOs(moduleName: string, moduleType: string, fields: FieldDefinition[]): GeneratedDTOs {
   if (!fields || fields.length === 0) {
     return {
       createRequest: '// Add at least one field to generate code.',
@@ -120,1586 +140,171 @@ export function generateBackendDTOs(
       searchRequest: '// Add at least one field to generate code.'
     };
   }
-
   const pascalName = toPascalCase(moduleName);
   const packageName = `com.gable.um.${moduleType.toLowerCase()}.dto`;
-
-  // Helper to generate Java fields
   const generateJavaFields = (fieldList: FieldDefinition[]) => {
     return fieldList.map(f => `    private ${f.type} ${f.name};`).join('\n');
   };
-
-  // Create Request DTO
   const createFields = generateJavaFields(fields);
-  const createRequest = `package ${packageName};
-
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import java.time.LocalDate;
-import java.math.BigDecimal;
-
-@Getter
-@Setter
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-public class ${pascalName}CreateRequest {
-${createFields}
-}
-`;
-
-  // Update Request DTO (Typically excludes primary keys)
+  const createRequest = `package ${packageName};\nimport lombok.*;\nimport java.time.LocalDate;\nimport java.math.BigDecimal;\n@Getter\n@Setter\n@Builder\n@AllArgsConstructor\n@NoArgsConstructor\npublic class ${pascalName}CreateRequest {\n${createFields}\n}\n`;
   const nonKeyFields = fields.filter(f => !f.isKey);
   const updateFieldsStr = generateJavaFields(nonKeyFields.length > 0 ? nonKeyFields : fields);
-
-  const updateRequest = `package ${packageName};
-
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import java.time.LocalDate;
-import java.math.BigDecimal;
-
-@Getter
-@Setter
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-public class ${pascalName}UpdateRequest {
-${updateFieldsStr}
-}
-`;
-
-  // Response DTO (Includes strictly specified fields)
+  const updateRequest = `package ${packageName};\nimport lombok.*;\nimport java.time.LocalDate;\nimport java.math.BigDecimal;\n@Getter\n@Setter\n@Builder\n@AllArgsConstructor\n@NoArgsConstructor\npublic class ${pascalName}UpdateRequest {\n${updateFieldsStr}\n}\n`;
   const responseFields = fields.map(f => `    private ${f.type} ${f.name};`).join('\n');
-  const response = `package ${packageName};
-
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import java.time.LocalDate;
-import java.math.BigDecimal;
-
-@Getter
-@Setter
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-public class ${pascalName}Response {
-${responseFields}
-}
-`;
-
-  // Search Request DTO
+  const response = `package ${packageName};\nimport lombok.*;\nimport java.time.LocalDate;\nimport java.math.BigDecimal;\n@Getter\n@Setter\n@Builder\n@AllArgsConstructor\n@NoArgsConstructor\npublic class ${pascalName}Response {\n${responseFields}\n}\n`;
   const searchFields = generateJavaFields(fields);
-  const searchRequest = `package ${packageName};
-
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import java.time.LocalDate;
-import java.math.BigDecimal;
-
-@Getter
-@Setter
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-public class ${pascalName}SearchRequest {
-${searchFields}
-}
-`;
-
+  const searchRequest = `package ${packageName};\nimport lombok.*;\nimport java.time.LocalDate;\nimport java.math.BigDecimal;\n@Getter\n@Setter\n@Builder\n@AllArgsConstructor\n@NoArgsConstructor\npublic class ${pascalName}SearchRequest {\n${searchFields}\n}\n`;
   return { createRequest, updateRequest, response, searchRequest };
 }
 
-// Generate JPA Model Entity
-export function generateBackendModel(
-  moduleName: string,
-  moduleType: string,
-  tableName: string,
-  className: string,
-  fields: FieldDefinition[]
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
+export function generateBackendModel(moduleName: string, moduleType: string, tableName: string, className: string, fields: FieldDefinition[]): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const packageName = `com.gable.um.${moduleType.toLowerCase()}.model`;
   const table = tableName || `MK_${toSnakeCase(moduleName)}`;
   const finalClassName = className || `Mk${toPascalCase(moduleName)}`;
-
   const classFields = fields.map(f => {
-    let annotations = '';
-    if (f.isKey) {
-      annotations += '    @Id\n';
-    }
+    let annotations = f.isKey ? '    @Id\n' : '';
     annotations += `    @Column(name = "${f.columnName || toSnakeCase(f.name)}")`;
     return `${annotations}\n    private ${f.type} ${f.name};`;
   }).join('\n\n');
-
-  return `package ${packageName};
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
-import java.time.LocalDate;
-import java.math.BigDecimal;
-
-@Entity
-@Getter
-@Setter
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-@Table(name = "${table}")
-public class ${finalClassName} {
-
-${classFields}
-}
-`;
+  return `package ${packageName};\nimport jakarta.persistence.*;\nimport lombok.*;\nimport java.time.LocalDate;\nimport java.math.BigDecimal;\n@Entity\n@Getter\n@Setter\n@Builder\n@AllArgsConstructor\n@NoArgsConstructor\n@Table(name = "${table}")\npublic class ${finalClassName} {\n${classFields}\n}\n`;
 }
 
-// Generate Controller
-export function generateBackendController(
-  moduleName: string,
-  moduleType: string,
-  className: string,
-  fields: FieldDefinition[]
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
+export function generateBackendController(moduleName: string, moduleType: string, className: string, fields: FieldDefinition[]): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const pascalName = toPascalCase(moduleName);
   const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
-  const packageName = `com.gable.um.${typeLower}.controller`;
-
-  return `package ${packageName};
-
-import com.gable.um.${typeLower}.service.${pascalName}Service;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-@Slf4j
-@RestController
-@RequiredArgsConstructor
-@RequestMapping("/${typeLower}/${camelName}")
-public class ${pascalName}Controller {
-
-    private final ${pascalName}Service ${camelName}Service;
-
-}
-`;
+  return `package com.gable.um.${typeLower}.controller;\nimport com.gable.um.${typeLower}.service.${pascalName}Service;\nimport lombok.RequiredArgsConstructor;\nimport lombok.extern.slf4j.Slf4j;\nimport org.springframework.web.bind.annotation.*;\n@Slf4j\n@RestController\n@RequiredArgsConstructor\n@RequestMapping("/${typeLower}/${camelName}")\npublic class ${pascalName}Controller {\n    private final ${pascalName}Service ${camelName}Service;\n}\n`;
 }
 
-// Generate JpaRepository
-export function generateBackendRepository(
-  moduleName: string,
-  moduleType: string,
-  className: string,
-  fields: FieldDefinition[]
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
+export function generateBackendRepository(moduleName: string, moduleType: string, className: string, fields: FieldDefinition[]): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const pascalName = toPascalCase(moduleName);
   const typeLower = moduleType.toLowerCase();
-  const packageName = `com.gable.um.${typeLower}.repository`;
   const finalClassName = className || `Mk${pascalName}`;
-  
   const keyField = fields.find(f => f.isKey) || fields[0];
-  const keyType = keyField ? keyField.type : 'String';
-
-  return `package ${packageName};
-
-import com.gable.um.${typeLower}.model.${finalClassName};
-import org.springframework.context.annotation.Profile;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
-
-@Profile("oracle")
-@Repository
-public interface ${pascalName}Repository extends JpaRepository<${finalClassName}, ${keyType}>, ${pascalName}RepositoryCustom {
-}
-`;
+  return `package com.gable.um.${typeLower}.repository;\nimport com.gable.um.${typeLower}.model.${finalClassName};\nimport org.springframework.context.annotation.Profile;\nimport org.springframework.data.jpa.repository.JpaRepository;\nimport org.springframework.stereotype.Repository;\n@Profile("oracle")\n@Repository\npublic interface ${pascalName}Repository extends JpaRepository<${finalClassName}, ${keyField ? keyField.type : 'String'}>, ${pascalName}RepositoryCustom {\n}\n`;
 }
 
-// Generate Custom Repository Interface
-export function generateBackendRepositoryCustom(
-  moduleName: string,
-  moduleType: string,
-  className: string,
-  fields: FieldDefinition[]
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
+export function generateBackendRepositoryCustom(moduleName: string, moduleType: string, className: string, fields: FieldDefinition[]): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const pascalName = toPascalCase(moduleName);
   const typeLower = moduleType.toLowerCase();
-  const packageName = `com.gable.um.${typeLower}.repository`;
-
-  return `package ${packageName};
-
-import com.gable.um.${typeLower}.dto.${pascalName}Response;
-import com.gable.um.${typeLower}.dto.${pascalName}SearchRequest;
-import java.util.List;
-
-public interface ${pascalName}RepositoryCustom {
-
-    List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request);
-}
-`;
+  return `package com.gable.um.${typeLower}.repository;\nimport com.gable.um.${typeLower}.dto.${pascalName}Response;\nimport com.gable.um.${typeLower}.dto.${pascalName}SearchRequest;\nimport java.util.List;\npublic interface ${pascalName}RepositoryCustom {\n    List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request);\n}\n`;
 }
 
-// Generate Custom Repository Implementation
-export function generateBackendRepositoryCustomImpl(
-  moduleName: string,
-  moduleType: string,
-  tableName: string,
-  className: string,
-  fields: FieldDefinition[]
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
+export function generateBackendRepositoryCustomImpl(moduleName: string, moduleType: string, tableName: string, className: string, fields: FieldDefinition[]): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const pascalName = toPascalCase(moduleName);
   const typeLower = moduleType.toLowerCase();
-  const packageName = `com.gable.um.${typeLower}.repository`;
   const table = tableName || `MK_${toSnakeCase(moduleName)}`;
-
-  // Dynamic SQL column selection
   const selectColumns = fields.map(f => f.columnName || toSnakeCase(f.name)).join(', ');
-  
-  // Dynamic SQL query binding builders
   const queryConditions = fields.map(f => {
     const col = f.columnName || toSnakeCase(f.name);
-    if (f.type === 'String') {
-      return `        if (org.apache.commons.lang3.StringUtils.isNotEmpty(request.get${toPascalCase(f.name)}())) {\n` +
-             `            sql.append(" AND UPPER(${col}) LIKE :${f.name} ESCAPE '\\\\' ");\n` +
-             `            params.put("${f.name}", "%" + escapeLike(request.get${toPascalCase(f.name)}().toUpperCase()) + "%");\n` +
-             `        }`;
-    } else {
-      return `        if (request.get${toPascalCase(f.name)}() != null) {\n` +
-             `            sql.append(" AND ${col} = :${f.name} ");\n` +
-             `            params.put("${f.name}", request.get${toPascalCase(f.name)}());\n` +
-             `        }`;
-    }
+    return f.type === 'String'
+      ? `        if (org.apache.commons.lang3.StringUtils.isNotEmpty(request.get${toPascalCase(f.name)}())) {\n            sql.append(" AND UPPER(${col}) LIKE :${f.name} ESCAPE '\\\\' ");\n            params.put("${f.name}", "%" + escapeLike(request.get${toPascalCase(f.name)}().toUpperCase()) + "%");\n        }`
+      : `        if (request.get${toPascalCase(f.name)}() != null) {\n            sql.append(" AND ${col} = :${f.name} ");\n            params.put("${f.name}", request.get${toPascalCase(f.name)}());\n        }`;
   }).join('\n');
-
-  // Result mapper
   const resultMapperFields = fields.map(f => {
-    let getter = 'getString';
-    if (f.type === 'Integer') getter = 'getInt';
-    else if (f.type === 'Long') getter = 'getLong';
-    else if (f.type === 'Double') getter = 'getDouble';
-    else if (f.type === 'BigDecimal') getter = 'getBigDecimal';
-    else if (f.type === 'LocalDate') {
-      return `                        .${f.name}(rs.getDate("${f.columnName || toSnakeCase(f.name)}") != null ? rs.getDate("${f.columnName || toSnakeCase(f.name)}").toLocalDate() : null)`;
-    }
-    return `                        .${f.name}(rs.get${toPascalCase(getter)}("${f.columnName || toSnakeCase(f.name)}"))`;
+    let getter = f.type === 'Integer' ? 'getInt' : f.type === 'Long' ? 'getLong' : f.type === 'Double' ? 'getDouble' : f.type === 'BigDecimal' ? 'getBigDecimal' : 'getString';
+    return f.type === 'LocalDate'
+      ? `                        .${f.name}(rs.getDate("${f.columnName || toSnakeCase(f.name)}") != null ? rs.getDate("${f.columnName || toSnakeCase(f.name)}").toLocalDate() : null)`
+      : `                        .${f.name}(rs.get${toPascalCase(getter)}("${f.columnName || toSnakeCase(f.name)}"))`;
   }).join('\n');
-
-  return `package ${packageName};
-
-import com.gable.um.${typeLower}.dto.${pascalName}Response;
-import com.gable.um.${typeLower}.dto.${pascalName}SearchRequest;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Profile;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Repository;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-@Profile("oracle")
-@Repository
-@Slf4j
-@RequiredArgsConstructor
-public class ${pascalName}RepositoryCustomImpl implements ${pascalName}RepositoryCustom {
-
-    private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
-
-    private String escapeLike(String value) {
-        if (value == null) return null;
-        return value.replace("_", "\\\\_");
-    }
-
-    @Override
-    public List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request) {
-        Map<String, Object> params = new HashMap<>();
-        StringBuilder sql = new StringBuilder();
-        sql.append(" SELECT ${selectColumns} ");
-        sql.append(" FROM ${table} ");
-        sql.append(" WHERE 1 = 1 ");
-
-${queryConditions}
-
-        return namedParameterJdbcTemplate.query(sql.toString(), params, (rs, rowNum) ->
-                ${pascalName}Response.builder()
-${resultMapperFields}
-                        .build()
-        );
-    }
-}
-`;
+  return `package com.gable.um.${typeLower}.repository;\nimport com.gable.um.${typeLower}.dto.*;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.context.annotation.Profile;\nimport org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;\nimport org.springframework.stereotype.Repository;\nimport java.util.*;\n@Profile("oracle")\n@Repository\n@RequiredArgsConstructor\npublic class ${pascalName}RepositoryCustomImpl implements ${pascalName}RepositoryCustom {\n    private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;\n    private String escapeLike(String value) { return value == null ? null : value.replace("_", "\\\\_"); }\n    @Override\n    public List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request) {\n        Map<String, Object> params = new HashMap<>();\n        StringBuilder sql = new StringBuilder("SELECT ${selectColumns} FROM ${table} WHERE 1=1 ");\n${queryConditions}\n        return namedParameterJdbcTemplate.query(sql.toString(), params, (rs, rowNum) ->\n                ${pascalName}Response.builder()\n${resultMapperFields}\n                        .build()\n        );\n    }\n}\n`;
 }
 
-// Generate Service Interface
-export function generateBackendService(
-  moduleName: string,
-  moduleType: string,
-  className: string,
-  fields: FieldDefinition[]
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
+export function generateBackendService(moduleName: string, moduleType: string, className: string, fields: FieldDefinition[]): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const pascalName = toPascalCase(moduleName);
   const typeLower = moduleType.toLowerCase();
-  const packageName = `com.gable.um.${typeLower}.service`;
-  
   const keyField = fields.find(f => f.isKey) || fields[0];
-  const keyType = keyField ? keyField.type : 'String';
-  const keyName = keyField ? keyField.name : 'id';
-
-  return `package ${packageName};
-
-import com.gable.um.${typeLower}.dto.${pascalName}CreateRequest;
-import com.gable.um.${typeLower}.dto.${pascalName}Response;
-import com.gable.um.${typeLower}.dto.${pascalName}SearchRequest;
-import com.gable.um.${typeLower}.dto.${pascalName}UpdateRequest;
-
-import java.util.List;
-
-public interface ${pascalName}Service {
-
-    List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request);
-
-    ${pascalName}Response get${pascalName}ById(${keyType} ${keyName});
-
-    void create${pascalName}(${pascalName}CreateRequest request, String userId);
-
-    void update${pascalName}(${keyType} ${keyName}, ${pascalName}UpdateRequest request, String userId);
-
-    void delete${pascalName}(${keyType} ${keyName}, String userId);
-}
-`;
+  return `package com.gable.um.${typeLower}.service;\nimport com.gable.um.${typeLower}.dto.*;\nimport java.util.List;\npublic interface ${pascalName}Service {\n    List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request);\n    ${pascalName}Response get${pascalName}ById(${keyField ? keyField.type : 'String'} id);\n    void create${pascalName}(${pascalName}CreateRequest request, String userId);\n    void update${pascalName}(${keyField ? keyField.type : 'String'} id, ${pascalName}UpdateRequest request, String userId);\n    void delete${pascalName}(${keyField ? keyField.type : 'String'} id, String userId);\n}\n`;
 }
 
-// Generate Service Implementation
-export function generateBackendServiceImpl(
-  moduleName: string,
-  moduleType: string,
-  className: string,
-  fields: FieldDefinition[]
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
+export function generateBackendServiceImpl(moduleName: string, moduleType: string, className: string, fields: FieldDefinition[]): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const pascalName = toPascalCase(moduleName);
   const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
-  const packageName = `com.gable.um.${typeLower}.service`;
   const finalClassName = className || `Mk${pascalName}`;
-  
   const keyField = fields.find(f => f.isKey) || fields[0];
-  const keyType = keyField ? keyField.type : 'String';
-  const keyName = keyField ? keyField.name : 'id';
-
-  // Builder setters from CreateRequest
   const entitySetters = fields.map(f => `                .${f.name}(request.get${toPascalCase(f.name)}())`).join('\n');
   const dtoResponseBuilder = fields.map(f => `                        .${f.name}(e.get${toPascalCase(f.name)}())`).join('\n');
-
-  // Dynamic set update fields from UpdateRequest
-  const nonKeyFields = fields.filter(f => !f.isKey);
-  const entityUpdateSetters = (nonKeyFields.length > 0 ? nonKeyFields : fields)
-    .map(f => `        entity.set${toPascalCase(f.name)}(request.get${toPascalCase(f.name)}());`)
-    .join('\n');
-
-  // Programmatic validation checks for CreateRequest
-  const createValidationChecks = fields.map(f => {
-    const checks: string[] = [];
-    const fieldGetter = `request.get${toPascalCase(f.name)}()`;
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : toPascalCase(f.name).replace(/([a-z])([A-Z])/g, '$1 $2');
-    if (f.isRequired) {
-      if (f.type === 'String') {
-        checks.push(`        if (${fieldGetter} == null || ${fieldGetter}.trim().isEmpty()) {\n            throw new BusinessException("กรุณากรอกข้อมูล ${label}");\n        }`);
-      } else {
-        checks.push(`        if (${fieldGetter} == null) {\n            throw new BusinessException("กรุณากรอกข้อมูล ${label}");\n        }`);
-      }
-    }
-    if (f.type === 'String' && f.maxLength !== undefined && f.maxLength > 0) {
-      checks.push(`        if (${fieldGetter} != null && ${fieldGetter}.length() > ${f.maxLength}) {\n            throw new BusinessException("ความยาว ${label} ต้องไม่เกิน ${f.maxLength} ตัวอักษร");\n        }`);
-    }
-    return checks.join('\n');
-  }).filter(c => c.length > 0).join('\n');
-
-  const createValidationInline = createValidationChecks
-    ? `        // Field validations\n${createValidationChecks}\n\n`
-    : '';
-
-  // Programmatic validation checks for UpdateRequest
-  const updateValidationChecks = (nonKeyFields.length > 0 ? nonKeyFields : fields).map(f => {
-    const checks: string[] = [];
-    const fieldGetter = `request.get${toPascalCase(f.name)}()`;
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : toPascalCase(f.name).replace(/([a-z])([A-Z])/g, '$1 $2');
-    if (f.isRequired) {
-      if (f.type === 'String') {
-        checks.push(`        if (${fieldGetter} == null || ${fieldGetter}.trim().isEmpty()) {\n            throw new BusinessException("กรุณากรอกข้อมูล ${label}");\n        }`);
-      } else {
-        checks.push(`        if (${fieldGetter} == null) {\n            throw new BusinessException("กรุณากรอกข้อมูล ${label}");\n        }`);
-      }
-    }
-    if (f.type === 'String' && f.maxLength !== undefined && f.maxLength > 0) {
-      checks.push(`        if (${fieldGetter} != null && ${fieldGetter}.length() > ${f.maxLength}) {\n            throw new BusinessException("ความยาว ${label} ต้องไม่เกิน ${f.maxLength} ตัวอักษร");\n        }`);
-    }
-    return checks.join('\n');
-  }).filter(c => c.length > 0).join('\n');
-
-  const updateValidationInline = updateValidationChecks
-    ? `        // Field validations\n${updateValidationChecks}\n\n`
-    : '';
-
-  return `package ${packageName};
-
-import com.gable.um.exception.BusinessException;
-import com.gable.um.${typeLower}.dto.${pascalName}CreateRequest;
-import com.gable.um.${typeLower}.dto.${pascalName}Response;
-import com.gable.um.${typeLower}.dto.${pascalName}SearchRequest;
-import com.gable.um.${typeLower}.dto.${pascalName}UpdateRequest;
-import com.gable.um.${typeLower}.model.${finalClassName};
-import com.gable.um.${typeLower}.repository.${pascalName}Repository;
-import com.gable.um.util.MessageUtils;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.Optional;
-
-@Service
-@RequiredArgsConstructor
-@Slf4j
-@Transactional
-public class ${pascalName}ServiceImpl implements ${pascalName}Service {
-
-    private final ${pascalName}Repository ${camelName}Repository;
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request) {
-        return ${camelName}Repository.search${pascalName}(request);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public ${pascalName}Response get${pascalName}ById(${keyType} ${keyName}) {
-        Optional<${finalClassName}> opt = ${camelName}Repository.findById(${keyName});
-        return opt.map(e -> ${pascalName}Response.builder()
-${dtoResponseBuilder}
-                        .build())
-                .orElse(null);
-    }
-
-    @Override
-    public void create${pascalName}(${pascalName}CreateRequest request, String userId) {
-${createValidationInline}        ${finalClassName} entity = ${finalClassName}.builder()
-${entitySetters}
-                .build();
-        ${camelName}Repository.save(entity);
-    }
-
-    @Override
-    public void update${pascalName}(${keyType} ${keyName}, ${pascalName}UpdateRequest request, String userId) {
-        ${finalClassName} entity = ${camelName}Repository.findById(${keyName})
-                .orElseThrow(() -> new BusinessException(MessageUtils.getMessageFromMsgCode("EC003")));
-
-${updateValidationInline}${entityUpdateSetters}
-        
-        ${camelName}Repository.save(entity);
-    }
-
-    @Override
-    public void delete${pascalName}(${keyType} ${keyName}, String userId) {
-        if (!${camelName}Repository.existsById(${keyName})) {
-            throw new BusinessException(MessageUtils.getMessageFromMsgCode("EC003"));
-        }
-        ${camelName}Repository.deleteById(${keyName});
-    }
-}
-`;
+  const entityUpdateSetters = fields.filter(f => !f.isKey).map(f => `        entity.set${toPascalCase(f.name)}(request.get${toPascalCase(f.name)}());`).join('\n');
+  return `package com.gable.um.${typeLower}.service;\nimport com.gable.um.exception.BusinessException;\nimport com.gable.um.${typeLower}.dto.*;\nimport com.gable.um.${typeLower}.model.${finalClassName};\nimport com.gable.um.${typeLower}.repository.${pascalName}Repository;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.stereotype.Service;\nimport org.springframework.transaction.annotation.Transactional;\nimport java.util.List;\n@Service\n@RequiredArgsConstructor\n@Transactional\npublic class ${pascalName}ServiceImpl implements ${pascalName}Service {\n    private final ${pascalName}Repository ${camelName}Repository;\n    @Override\n    @Transactional(readOnly = true)\n    public List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request) { return ${camelName}Repository.search${pascalName}(request); }\n    @Override\n    @Transactional(readOnly = true)\n    public ${pascalName}Response get${pascalName}ById(${keyField ? keyField.type : 'String'} id) { return ${camelName}Repository.findById(id).map(e -> ${pascalName}Response.builder()\n${dtoResponseBuilder}\n                .build()).orElse(null); }\n    @Override\n    public void create${pascalName}(${pascalName}CreateRequest request, String userId) {\n        ${finalClassName} entity = ${finalClassName}.builder()\n${entitySetters}\n                .build();\n        ${camelName}Repository.save(entity);\n    }\n    @Override\n    public void update${pascalName}(${keyField ? keyField.type : 'String'} id, ${pascalName}UpdateRequest request, String userId) {\n        ${finalClassName} entity = ${camelName}Repository.findById(id).orElseThrow(() -> new BusinessException("EC003"));\n${entityUpdateSetters}\n        ${camelName}Repository.save(entity);\n    }\n    @Override\n    public void delete${pascalName}(${keyField ? keyField.type : 'String'} id, String userId) {\n        if (!${camelName}Repository.existsById(id)) throw new BusinessException("EC003");\n        ${camelName}Repository.deleteById(id);\n    }\n}\n`;
 }
 
-// Generate Frontend Model/Schema
+// ============================================================================
+// FRONTEND MODELS & SCHEMAS
+// ============================================================================
+
 export function generateFrontendModel(
   moduleName: string,
   moduleType: string,
   fields: FieldDefinition[],
-  frontendMode?: 'search' | 'report'
+  frontendMode?: 'search' | 'report',
+  options?: GeneratorOptions
 ): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const pascalName = toPascalCase(moduleName);
+  let finalFields = [...fields];
 
-  const modelFieldsStr = fields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
-  
-  const fieldsObjectFields = fields.map(f => `  ${toSnakeCase(f.name)}: "${f.name}",`).join('\n');
-
-  let code = `export interface ${pascalName}Model {\n${modelFieldsStr}\n}\n\n` +
-             `export const ${pascalName}ModelFields = {\n${fieldsObjectFields}\n};\n`;
-
-  if (frontendMode !== 'report') {
-    const createFieldsStr = fields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
-    const updateFieldsStr = fields.filter(f => !f.isKey).map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
-    
-    code += `\nexport interface ${pascalName}CreateModel {\n${createFieldsStr}\n}\n\n` +
-            `export interface ${pascalName}UpdateModel {\n${updateFieldsStr}\n}\n`;
+  if (options?.hasDealerSearch) {
+    if (!finalFields.some(f => f.name === 'dealerCode')) finalFields.push({ name: 'dealerCode', type: 'String', columnName: 'DEALER_CODE', isKey: false, label: 'รหัสผู้จำหน่าย' });
+    if (!finalFields.some(f => f.name === 'dealerName')) finalFields.push({ name: 'dealerName', type: 'String', columnName: 'DEALER_NAME', isKey: false, label: 'ชื่อผู้จำหน่าย' });
   }
 
+  const modelFieldsStr = finalFields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
+  const fieldsObjectFields = finalFields.map(f => `  ${toSnakeCase(f.name)}: "${f.name}",`).join('\n');
+
+  let code = `export interface ${pascalName}Model {\n${modelFieldsStr}\n}\n\nexport const ${pascalName}ModelFields = {\n${fieldsObjectFields}\n};\n`;
+  if (frontendMode !== 'report') {
+    const createFieldsStr = finalFields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
+    const updateFieldsStr = finalFields.filter(f => !f.isKey).map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
+    code += `\nexport interface ${pascalName}CreateModel {\n${createFieldsStr}\n}\n\nexport interface ${pascalName}UpdateModel {\n${updateFieldsStr}\n}\n`;
+  }
   return code;
 }
 
-// Generate Frontend Service
 export function generateFrontendService(
   moduleName: string,
   moduleType: string,
-  fields: FieldDefinition[]
+  fields: FieldDefinition[],
+  isReport: boolean = false,
+  options?: GeneratorOptions
 ): string {
   const camelName = toCamelCase(moduleName);
+  const pascalName = toPascalCase(moduleName);
   const typeUpper = moduleType.toUpperCase();
-
-  return `import { Constants } from "@/_helpers/constants";
-import axios from "@/utils/axiosInstance";
-
-export const ${toSnakeCase(moduleName)}_URL = \`\${Constants.URL_${typeUpper}}/${camelName}\`;
-
-export const ${camelName}Service = {
-  // Methods to be declared based on features
-};
-`;
-}
-
-// Helper to map parameter types to appropriate Input elements
-function getFieldInputTemplate(f: FieldDefinition): string {
-  let label = getDefaultLabel(f.name);
-  
-  if (f.type === 'Boolean') {
-    return `                        <CheckboxForm\n` +
-           `                            fieldName="${f.name}"\n` +
-           `                            label="${label}"\n` +
-           `                            form={inputForm}\n` +
-           `                        />`;
-  } else if (f.type === 'LocalDate') {
-    return `                        <CalendarForm\n` +
-           `                            fieldName="${f.name}"\n` +
-           `                            label="${label}"\n` +
-           `                            form={inputForm}\n` +
-           `                        />`;
-  } else if (['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type)) {
-    return `                        <InputForm\n` +
-           `                            type="number"\n` +
-           `                            fieldName="${f.name}"\n` +
-           `                            label="${label}"\n` +
-           `                            form={inputForm}\n` +
-           `                        />`;
-  } else {
-    return `                        <InputForm\n` +
-           `                            fieldName="${f.name}"\n` +
-           `                            label="${label}"\n` +
-           `                            form={inputForm}\n` +
-           `                        />`;
-  }
-}
-
-// Helper to determine which form components to import
-function getFormImports(fields: FieldDefinition[], extraImports: string[] = []): string {
-  const imports = new Set<string>(extraImports);
-  fields.forEach(f => {
-    if (f.type === 'Boolean') imports.add('CheckboxForm');
-    else if (f.type === 'LocalDate') imports.add('CalendarForm');
-    else imports.add('InputForm');
-  });
-  return Array.from(imports).sort().join(',\n  ');
-}
-
-// Generate Frontend Page View Component
-export function generateFrontendComponent(
-  moduleName: string,
-  moduleType: string,
-  fields: FieldDefinition[],
-  buttons: ButtonsSelection,
-  pageHeader?: string
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
-  const pascalName = toPascalCase(moduleName);
-  const camelName = toCamelCase(moduleName);
-
-  // Form zod schema definition
-  const zodFields = fields.map(f => {
-    if (f.type === 'String') {
-      return `    ${f.name}: z.string({ required_error: "Required field" }).min(1, { message: "Required field" })`;
-    } else if (f.type === 'Boolean') {
-      return `    ${f.name}: z.any().optional()`;
-    } else if (f.type === 'LocalDate') {
-      return `    ${f.name}: z.any().optional()`;
-    } else {
-      return `    ${f.name}: z.number().optional()`;
-    }
-  }).join(',\n');
-
-  // Input default values mapping
-  const defaults = fields.map(f => {
-    if (f.type === 'Boolean') return `        ${f.name}: false`;
-    if (f.type === 'LocalDate') return `        ${f.name}: null`;
-    return `        ${f.name}: ""`;
-  }).join(',\n');
-
-  // Dynamically map input components
-  const formInputs = fields.map(f => getFieldInputTemplate(f)).join('\n');
-
-  // Get dynamic imports list
-  const neededImports = getFormImports(fields, ['CustomButton', 'CustomCard', 'FormInput']);
-
-  // Generate buttons array
-  const renderedButtons: string[] = [];
-  let colsCount = 0;
-
-  if (buttons.search) {
-    renderedButtons.push(
-      `                                <CustomButton\n` +
-      `                                    labelId="BUTTON.SEARCH"\n` +
-      `                                    type="submit"\n` +
-      `                                />`
-    );
-    colsCount++;
-  }
-  if (buttons.clear) {
-    renderedButtons.push(
-      `                                <CustomButton\n` +
-      `                                    labelId="BUTTON.CLEAR"\n` +
-      `                                    onClick={() => inputForm.reset(defaultInput)}\n` +
-      `                                />`
-    );
-    colsCount++;
-  }
-  if (buttons.save) {
-    renderedButtons.push(
-      `                                <CustomButton\n` +
-      `                                    labelId="BUTTON.SAVE"\n` +
-      `                                    onClick={onSave}\n` +
-      `                                />`
-    );
-    colsCount++;
-  }
-  if (buttons.add) {
-    renderedButtons.push(
-      `                                <CustomButton\n` +
-      `                                    labelId="BUTTON.ADD"\n` +
-      `                                    onClick={onAdd}\n` +
-      `                                />`
-    );
-    colsCount++;
-  }
-  if (buttons.close) {
-    renderedButtons.push(
-      `                                <CustomButton\n` +
-      `                                    labelId="BUTTON.CLOSE"\n` +
-      `                                    onClick={onClose}\n` +
-      `                                />`
-    );
-    colsCount++;
-  }
-
-  const buttonsGroup = renderedButtons.join('\n');
-  const colsClass = `grid-cols-${colsCount || 1}`;
-
-  return `"use client"\n` +
-    `import {\n` +
-    `  ${neededImports}\n` +
-    `} from '@/components/layout/Form'\n` +
-    `import { Box } from "@radix-ui/themes"\n` +
-    `import { zodResolver } from '@hookform/resolvers/zod'\n` +
-    `import React from 'react'\n` +
-    `import { useForm } from 'react-hook-form'\n` +
-    `import { z } from 'zod'\n\n` +
-    `const inputSchema = z.object({\n` +
-    `${zodFields}\n` +
-    `})\n\n` +
-    `const defaultInput = {\n` +
-    `${defaults}\n` +
-    `}\n\n` +
-    `const ${pascalName}Page = () => {\n` +
-    `    const inputForm = useForm<z.infer<typeof inputSchema>>({\n` +
-    `        resolver: zodResolver(inputSchema),\n` +
-    `        defaultValues: defaultInput\n` +
-    `    })\n\n` +
-    `    const onSubmit = (data: z.infer<typeof inputSchema>) => {\n` +
-    `        console.log("Submit Form Data:", data)\n` +
-    `    }\n\n` +
-    `${buttons.save ? `    const onSave = () => {\n        console.log("Save action clicked")\n    }\n\n` : ''}` +
-    `${buttons.add ? `    const onAdd = () => {\n        console.log("Add action clicked")\n    }\n\n` : ''}` +
-    `${buttons.close ? `    const onClose = () => {\n        console.log("Close action clicked")\n    }\n\n` : ''}` +
-    `    return (\n` +
-    `        <div className='flex flex-col h-full w-full bg-muted'>\n` +
-    `            <Box className='w-[70rem] mx-auto p-6 md:p-10'>\n` +
-    `                <CustomCard\n` +
-    `                    header='${pageHeader || `Manage ${pascalName}`}'\n` +
-    `                    className='w-full h-fit'\n` +
-    `                >\n` +
-    `                    <FormInput\n` +
-    `                        id="${camelName}Form"\n` +
-    `                        form={inputForm}\n` +
-    `                        onSubmit={onSubmit}\n` +
-    `                    >\n` +
-    `                        <div className="grid auto-rows-min gap-4 md:grid-cols-2">\n` +
-    `${formInputs}\n` +
-    `                        </div>\n\n` +
-    `                        <div className='flex justify-center pt-6'>\n` +
-    `                            <div className='grid w-fit gap-2 justify-center items-center md:${colsClass}'>\n` +
-    `${buttonsGroup}\n` +
-    `                            </div>\n` +
-    `                        </div>\n` +
-    `                    </FormInput>\n` +
-    `                </CustomCard>\n` +
-    `            </Box>\n` +
-    `        </div>\n` +
-    `    )\n` +
-    `}\n\n` +
-    `export default ${pascalName}Page;\n`;
-}
-
-// Generate Search Page Component (combines search form, results grid table, and popup details trigger)
-export function generateFrontendSearchComponent(
-  moduleName: string,
-  moduleType: string,
-  fields: FieldDefinition[],
-  buttons: ButtonsSelection,
-  pageHeader?: string
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
-  const pascalName = toPascalCase(moduleName);
-  const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
 
-  const keyField = fields.find(f => f.isKey) || fields[0];
-  const keyFieldName = keyField ? keyField.name : 'id';
-
-  // Dynamic search fields (use first 3 fields as search criteria)
-  const searchFields = fields.slice(0, 3);
-  const dynamicFormsStr = searchFields.map(f => {
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : getDefaultLabel(f.name);
-    const maxLen = f.maxLength || (['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100);
-    const uiType = f.frontendType || (
-      f.type === 'Boolean' ? 'checkbox' :
-      f.type === 'LocalDate' ? 'calendar' :
-      'text'
-    );
-    const props: string[] = [];
-    props.push(`      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)}`);
-    props.push(`      label: "${label}"`);
-    props.push(`      type: "${uiType}"`);
-    if (f.isRequired) {
-      props.push(`      isRequired: true`);
+  if (isReport) {
+    let targetFields = [...fields];
+    if (options?.hasDealerSearch) {
+      if (!targetFields.some(f => f.name === 'dealerCode')) targetFields.push({ name: 'dealerCode', type: 'String', columnName: 'DEALER_CODE', isKey: false });
+      if (!targetFields.some(f => f.name === 'dealerName')) targetFields.push({ name: 'dealerName', type: 'String', columnName: 'DEALER_NAME', isKey: false });
     }
-    if (uiType === 'calendar') {
-      const fromField = findMatchingFromField(f.name, fields);
-      const toField = findMatchingToField(f.name, fields);
-      if (fromField) {
-        props.push(`      minDate: searchForm.watch(${pascalName}ModelFields.${toSnakeCase(fromField)})`);
-      }
-      if (toField) {
-        props.push(`      maxDate: searchForm.watch(${pascalName}ModelFields.${toSnakeCase(toField)})`);
-      }
-    } else if (uiType === 'text') {
-      props.push(`      maxLength: ${maxLen}`);
-    }
-    return `    {\n` + props.join(',\n') + `,\n    }`;
-  }).join(',\n');
+    const mappingParams = targetFields.map(f => f.type === 'LocalDate' ? `      ${f.name}: formatLocalDate(theModel.${f.name}),` : `      ${f.name}: theModel.${f.name},`).join('\n');
 
-  // Form buttons
-  const formButtonsStr = `    {\n` +
-                         `      labelId: "BUTTON.SEARCH",\n` +
-                         `      type: "submit",\n` +
-                         `      showButton: true,\n` +
-                         `    },\n` +
-                         `    {\n` +
-                         `      labelId: "BUTTON.CLEAR",\n` +
-                         `      type: "reset",\n` +
-                         `      bgColor: "secondary",\n` +
-                         `      showButton: true,\n` +
-                         `      onClick: onClear,\n` +
-                         `    },\n` +
-                         `    {\n` +
-                         `      labelId: "BUTTON.ADD",\n` +
-                         `      type: "button",\n` +
-                         `      showButton: true,\n` +
-                         `      onClick: handleAddAction,\n` +
-                         `    }`;
-
-  return `"use client";\n\n` +
-    `import { useEffect, useState } from "react";\n` +
-    `import { useForm } from "react-hook-form";\n` +
-    `import { z } from "zod";\n` +
-    `import { zodResolver } from "@hookform/resolvers/zod";\n` +
-    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\n` +
-    `import {\n` +
-    `  ${pascalName}SearchSchema,\n` +
-    `  default${pascalName}SearchValues,\n` +
-    `} from "./schemas/${camelName}SearchSchema";\n` +
-    `import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}.service";\n` +
-    `import { ${pascalName}TableColumns } from "./tables/${camelName}Table";\n` +
-    `import { useLoading } from "@/_providers/loader-provider";\n` +
-    `import {\n` +
-    `  AlertType,\n` +
-    `  ColPinTable,\n` +
-    `  CustomCard,\n` +
-    `} from "@/components/layout/Form";\n` +
-    `import { AlertWording, useAlert } from "@/_providers/alert-provider";\n` +
-    `import BoxContainer from "@/components/ui/box-container";\n` +
-    `import DynamicForm, {\n` +
-    `  ButtonConfig,\n` +
-    `  DynamicField,\n` +
-    `} from "@/components/layout/Form/dynamic-form-builder";\n` +
-    `import { FormHelper } from "@/_helpers/form-helper";\n` +
-    `import ${pascalName}FormModal from "./pop-ups/${camelName}-form-modal";\n` +
-    `import { MODE } from "@/_configs/mode-configs/mode-config";\n\n` +
-    `const ${pascalName} = () => {\n` +
-    `  const header = "${pageHeader || `หน้าจอสอบถามข้อมูล ${pascalName}`}";\n\n` +
-    `  const [showResult, setShowResult] = useState<boolean>(false);\n` +
-    `  const [dataTable, setDataTable] = useState<${pascalName}Model[]>([]);\n` +
-    `  const [modalOpen, setModalOpen] = useState<boolean>(false);\n` +
-    `  const [modalMode, setModalMode] = useState<MODE>(MODE.ADD);\n` +
-    `  const [modalEditData, setModalEditData] = useState<${pascalName}Model | null>(null);\n\n` +
-    `  const { errorAlert, openAlert, openConfirmAlert, successToast } = useAlert();\n` +
-    `  const loading = useLoading((state) => state.loading);\n` +
-    `  const setLoading = useLoading((state) => state.setLoading);\n\n` +
-    `  const searchForm = useForm<z.infer<typeof ${pascalName}SearchSchema>>({\n` +
-    `    resolver: zodResolver(${pascalName}SearchSchema),\n` +
-    `    defaultValues: default${pascalName}SearchValues,\n` +
-    `    mode: "onChange",\n` +
-    `  });\n\n` +
-    `  const onSearch = (): void => {\n` +
-    `    if (loading) return;\n` +
-    `    setLoading(true);\n` +
-    `    fetchDataTable();\n` +
-    `  };\n\n` +
-    `  const fetchDataTable = async () => {\n` +
-    `    const searchValues = searchForm.getValues();\n` +
-    `    const normalizedValues = FormHelper.normalizeSearchParams<${pascalName}Model>({\n` +
-    `      ...searchValues,\n` +
-    `    });\n` +
-    `    try {\n` +
-    `      const res = await ${camelName}Service.search${pascalName}(\n` +
-    `        normalizedValues as ${pascalName}Model,\n` +
-    `      );\n` +
-    `      if (res.data?.status && res.data?.object) {\n` +
-    `        setDataTable(res.data.object);\n` +
-    `        setShowResult(true);\n` +
-    `      } else {\n` +
-    `        openAlert(res.data.messageLocal, AlertType.WARNING);\n` +
-    `        setDataTable([]);\n` +
-    `      }\n` +
-    `    } catch (err) {\n` +
-    `      errorAlert(err);\n` +
-    `    } finally {\n` +
-    `      setLoading(false);\n` +
-    `    }\n` +
-    `  };\n\n` +
-    `  const onClear = () => {\n` +
-    `    searchForm.reset(default${pascalName}SearchValues);\n` +
-    `    setShowResult(false);\n` +
-    `    setDataTable([]);\n` +
-    `  };\n\n` +
-    `  const handleAddAction = () => {\n` +
-    `    setModalMode(MODE.ADD);\n` +
-    `    setModalEditData(null);\n` +
-    `    setModalOpen(true);\n` +
-    `  };\n\n` +
-    `  const handleEditAction = (data: ${pascalName}Model) => {\n` +
-    `    setModalMode(MODE.EDIT);\n` +
-    `    setModalEditData(data);\n` +
-    `    setModalOpen(true);\n` +
-    `  };\n\n` +
-    `  const handleDeleteAction = (data: ${pascalName}Model) => {\n` +
-    `    openConfirmAlert(\n` +
-    `      AlertWording.DELETE,\n` +
-    `      () => {\n` +
-    `        confirmDelete(data);\n` +
-    `      },\n` +
-    `      AlertType.WARNING,\n` +
-    `    );\n` +
-    `  };\n\n` +
-    `  const confirmDelete = async (data: ${pascalName}Model) => {\n` +
-    `    if (loading) return;\n` +
-    `    if (!data.${keyFieldName}) return;\n` +
-    `    setLoading(true);\n` +
-    `    try {\n` +
-    `      const res = await ${camelName}Service.delete${pascalName}(data.${keyFieldName});\n` +
-    `      if (res.data?.status) {\n` +
-    `        successToast(res.data.messageLocal);\n` +
-    `        await fetchDataTable();\n` +
-    `      } else {\n` +
-    `        openAlert(res.data.messageLocal, AlertType.WARNING);\n` +
-    `      }\n` +
-    `    } catch (err) {\n` +
-    `      errorAlert(err);\n` +
-    `    } finally {\n` +
-    `      setLoading(false);\n` +
-    `    }\n` +
-    `  };\n\n` +
-    `  const handleModalSaved = () => {\n` +
-    `    fetchDataTable();\n` +
-    `  };\n\n` +
-    `  const tableColumns = ${pascalName}TableColumns.GetColumns(\n` +
-    `    handleEditAction,\n` +
-    `    handleDeleteAction,\n` +
-    `  );\n\n` +
-    `  const dynamicForms: DynamicField[] = [\n` +
-    `${dynamicFormsStr}\n` +
-    `  ];\n\n` +
-    `  const formButtons: ButtonConfig[] = [\n` +
-    `${formButtonsStr}\n` +
-    `  ];\n\n` +
-    `  return (\n` +
-    `    <div className="bg-muted flex flex-col h-full w-full">\n` +
-    `      <div className="flex flex-row w-full p-6 pb-0 md:p-10 md:pb-0">\n` +
-    `        <CustomCard header={header} className="w-full h-fit">\n` +
-    `          <BoxContainer>\n` +
-    `            <DynamicForm\n` +
-    `              inputFormControl={searchForm}\n` +
-    `              formId="searchForm"\n` +
-    `              fields={dynamicForms}\n` +
-    `              buttons={formButtons}\n` +
-    `              onSubmit={onSearch}\n` +
-    `              columnsNo="2"\n` +
-    `              buttonColumnsNo="3"\n` +
-    `            />\n` +
-    `          </BoxContainer>\n` +
-    `          {showResult && (\n` +
-    `            <div className="grid auto-rows-min gap-4 mt-4">\n` +
-    `              <ColPinTable\n` +
-    `                title="ตารางข้อมูล ${pascalName}"\n` +
-    `                data={dataTable}\n` +
-    `                columns={tableColumns}\n` +
-    `              />\n` +
-    `            </div>\n` +
-    `          )}\n` +
-    `        </CustomCard>\n` +
-    `      </div>\n` +
-    `      <${pascalName}FormModal\n` +
-    `        open={modalOpen}\n` +
-    `        setOpen={setModalOpen}\n` +
-    `        mode={modalMode}\n` +
-    `        editData={modalEditData}\n` +
-    `        onSaved={handleModalSaved}\n` +
-    `      />\n` +
-    `    </div>\n` +
-    `  );\n` +
-    `};\n\n` +
-    `export default ${pascalName};\n`;
-}
-
-// Generate Detail Component (input details for modal / dialog)
-export function generateFrontendDetailComponent(
-  moduleName: string,
-  moduleType: string,
-  fields: FieldDefinition[],
-  buttons: ButtonsSelection
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
+    return `import { Constants } from "@/_helpers/constants";\nimport { formatLocalDate } from "@/_helpers/date-helper";\nimport axiosBlob from "@/utils/axiosBlob";\n` +
+           `import { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}/${camelName}.model";\n\n` +
+           `export const ${typeUpper}_${toSnakeCase(moduleName)}_URL = \`\${Constants.URL_${typeUpper}}/${camelName}\`;\n\n` +
+           `function export${pascalName}(theModel: ${pascalName}Model) {\n  return axiosBlob.get(\`\${${typeUpper}_${toSnakeCase(moduleName)}_URL}/exportExcel\`, {\n    params: {\n${mappingParams}\n    },\n  });\n}\n\n` +
+           `export const ${camelName}Service = { export${pascalName} };\n`;
   }
 
-  const pascalName = toPascalCase(moduleName);
-  const camelName = toCamelCase(moduleName);
-  const typeLower = moduleType.toLowerCase();
-
-  const keyField = fields.find(f => f.isKey) || fields[0];
-  const keyFieldName = keyField ? keyField.name : 'id';
-
-  // Map fields to DynamicField items
-  const dynamicFieldsStr = fields.map(f => {
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : getDefaultLabel(f.name);
-    const maxLen = f.maxLength || (['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100);
-    const uiType = f.frontendType || (
-      f.type === 'Boolean' ? 'checkbox' :
-      f.type === 'LocalDate' ? 'calendar' :
-      'text'
-    );
-    const props: string[] = [];
-    props.push(`      type: '${uiType}'`);
-    props.push(`      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)}`);
-    props.push(`      label: '${label}'`);
-    if (f.isKey || f.isRequired) {
-      props.push(`      isRequired: true`);
-    }
-    if (f.isKey) {
-      props.push(`      disable: mode === MODE.EDIT`);
-    }
-    if (uiType === 'calendar') {
-      const fromField = findMatchingFromField(f.name, fields);
-      const toField = findMatchingToField(f.name, fields);
-      if (fromField) {
-        props.push(`      minDate: modalForm.watch(${pascalName}ModelFields.${toSnakeCase(fromField)})`);
-      }
-      if (toField) {
-        props.push(`      maxDate: modalForm.watch(${pascalName}ModelFields.${toSnakeCase(toField)})`);
-      }
-    } else if (uiType === 'text') {
-      props.push(`      maxLength: ${maxLen}`);
-    }
-    return `    {\n` + props.join(',\n') + `,\n    }`;
-  }).join(',\n');
-
-  // Modal Save button, Clear, Close
-  const modalButtons = `    {\n` +
-                       `      labelId: "BUTTON.SAVE",\n` +
-                       `      type: "button",\n` +
-                       `      showButton: true,\n` +
-                       `      onClick: handleSave,\n` +
-                       `    },\n` +
-                       `    {\n` +
-                       `      labelId: "BUTTON.CLEAR",\n` +
-                       `      type: "button",\n` +
-                       `      bgColor: "secondary",\n` +
-                       `      showButton: true,\n` +
-                       `      onClick: handleClear,\n` +
-                       `    },\n` +
-                       `    {\n` +
-                       `      labelId: "BUTTON.CLOSE",\n` +
-                       `      type: "button",\n` +
-                       `      bgColor: "secondary",\n` +
-                       `      showButton: true,\n` +
-                       `      onClick: handleClose,\n` +
-                       `    }`;
-
-  const bodyCreateFields = fields.map(f => `          ${f.name}: values.${f.name},`).join('\n');
-  const bodyUpdateFields = fields.filter(f => !f.isKey).map(f => `          ${f.name}: values.${f.name},`).join('\n');
-
-  return `"use client";\n\n` +
-    `import { useEffect } from "react";\n` +
-    `import { useForm } from "react-hook-form";\n` +
-    `import { z } from "zod";\n` +
-    `import { zodResolver } from "@hookform/resolvers/zod";\n` +
-    `import {\n` +
-    `  ${pascalName}CreateModel,\n` +
-    `  ${pascalName}Model,\n` +
-    `  ${pascalName}UpdateModel,\n` +
-    `  ${pascalName}ModelFields,\n` +
-    `} from "@/_models/${typeLower}/${camelName}.model";\n` +
-    `import {\n` +
-    `  ${pascalName}FormSchema,\n` +
-    `  default${pascalName}FormValues,\n` +
-    `} from "../schemas/${camelName}FormSchema";\n` +
-    `import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}.service";\n` +
-    `import { AlertType } from "@/components/layout/Form";\n` +
-    `import { CustomDialog } from "@/components/layout/Form/CustomDialog";\n` +
-    `import DynamicForm, {\n` +
-    `  ButtonConfig,\n` +
-    `  DynamicField,\n` +
-    `} from "@/components/layout/Form/dynamic-form-builder";\n` +
-    `import BoxContainer from "@/components/ui/box-container";\n` +
-    `import { AlertWording, useAlert } from "@/_providers/alert-provider";\n` +
-    `import { useLoading } from "@/_providers/loader-provider";\n` +
-    `import { MODE } from "@/_configs/mode-configs/mode-config";\n\n` +
-    `interface ${pascalName}FormModalProps {\n` +
-    `  open: boolean;\n` +
-    `  setOpen: (open: boolean) => void;\n` +
-    `  mode: MODE;\n` +
-    `  editData: ${pascalName}Model | null;\n` +
-    `  onSaved: () => void;\n` +
-    `}\n\n` +
-    `const ${pascalName}FormModal = ({\n` +
-    `  open,\n` +
-    `  setOpen,\n` +
-    `  mode,\n` +
-    `  editData,\n` +
-    `  onSaved,\n` +
-    `}: ${pascalName}FormModalProps) => {\n` +
-    `  const title = "ข้อมูล ${pascalName}";\n\n` +
-    `  const { errorAlert, openConfirmAlert, successToast } = useAlert();\n` +
-    `  const loading = useLoading((state) => state.loading);\n` +
-    `  const setLoading = useLoading((state) => state.setLoading);\n\n` +
-    `  const modalForm = useForm<z.infer<typeof ${pascalName}FormSchema>>({\n` +
-    `    resolver: zodResolver(${pascalName}FormSchema),\n` +
-    `    defaultValues: default${pascalName}FormValues,\n` +
-    `    mode: "onChange",\n` +
-    `  });\n\n` +
-    `  useEffect(() => {\n` +
-    `    if (!open) return;\n` +
-    `    if (mode === MODE.EDIT && editData) {\n` +
-    `      modalForm.reset({\n` +
-    `        ...editData as any\n` +
-    `      });\n` +
-    `    } else if (mode === MODE.ADD) {\n` +
-    `      modalForm.reset(default${pascalName}FormValues);\n` +
-    `    }\n` +
-    `  }, [open, mode, editData]);\n\n` +
-    `  const handleSave = async () => {\n` +
-    `    const isValid = await modalForm.trigger();\n` +
-    `    if (!isValid) return;\n\n` +
-    `    const wording = mode === MODE.ADD ? AlertWording.SAVE : AlertWording.EDIT;\n` +
-    `    openConfirmAlert(\n` +
-    `      wording,\n` +
-    `      () => {\n` +
-    `        void submitSave();\n` +
-    `      },\n` +
-    `      AlertType.SAVE,\n` +
-    `    );\n` +
-    `  };\n\n` +
-    `  const submitSave = async () => {\n` +
-    `    if (loading) return;\n` +
-    `    setLoading(true);\n` +
-    `    try {\n` +
-    `      const values = modalForm.getValues();\n` +
-    `      if (mode === MODE.ADD) {\n` +
-    `        const body: ${pascalName}CreateModel = {\n` +
-    `${bodyCreateFields}\n` +
-    `        };\n` +
-    `        const res = await ${camelName}Service.create${pascalName}(body);\n` +
-    `        if (res.data?.status) {\n` +
-    `          successToast(res.data.messageLocal);\n` +
-    `          setOpen(false);\n` +
-    `          onSaved();\n` +
-    `        } else {\n` +
-    `          errorAlert(res.data?.messageLocal);\n` +
-    `        }\n` +
-    `      } else {\n` +
-    `        const body: ${pascalName}UpdateModel = {\n` +
-    `${bodyUpdateFields}\n` +
-    `        };\n` +
-    `        const res = await ${camelName}Service.update${pascalName}(\n` +
-    `          values.${keyFieldName} ?? "",\n` +
-    `          body,\n` +
-    `        );\n` +
-    `        if (res.data?.status) {\n` +
-    `          successToast(res.data.messageLocal);\n` +
-    `          setOpen(false);\n` +
-    `          onSaved();\n` +
-    `        } else {\n` +
-    `          errorAlert(res.data?.messageLocal);\n` +
-    `        }\n` +
-    `      }\n` +
-    `    } catch (err) {\n` +
-    `      errorAlert(err);\n` +
-    `    } finally {\n` +
-    `      setLoading(false);\n` +
-    `    }\n` +
-    `  };\n\n` +
-    `  const handleClear = () => {\n` +
-    `    if (mode === MODE.ADD) {\n` +
-    `      modalForm.reset(default${pascalName}FormValues);\n` +
-    `    } else if (mode === MODE.EDIT && editData) {\n` +
-    `      modalForm.reset({\n` +
-    `        ...editData as any\n` +
-    `      });\n` +
-    `    }\n` +
-    `  };\n\n` +
-    `  const handleClose = () => {\n` +
-    `    openConfirmAlert(\n` +
-    `      AlertWording.CANCEL,\n` +
-    `      () => {\n` +
-    `        modalForm.reset(default${pascalName}FormValues);\n` +
-    `        setOpen(false);\n` +
-    `      },\n` +
-    `      AlertType.WARNING,\n` +
-    `    );\n` +
-    `  };\n\n` +
-    `  const modalFields: DynamicField[] = [\n` +
-    `${dynamicFieldsStr}\n` +
-    `  ];\n\n` +
-    `  const modalButtons: ButtonConfig[] = [\n` +
-    `${modalButtons}\n` +
-    `  ];\n\n` +
-    `  return (\n` +
-    `    <CustomDialog\n` +
-    `      open={open}\n` +
-    `      onOpenChange={(val) => {\n` +
-    `        if (!val) handleClose();\n` +
-    `      }}\n` +
-    `      title={title}\n` +
-    `      size="lg"\n` +
-    `      buttons={modalButtons}\n` +
-    `      buttonColumnsNo="3"\n` +
-    `    >\n` +
-    `      <BoxContainer variant="compact">\n` +
-    `        <DynamicForm\n` +
-    `          inputFormControl={modalForm}\n` +
-    `          formId="${camelName}FormModal"\n` +
-    `          fields={modalFields}\n` +
-    `          columnsNo="1"\n` +
-    `        />\n` +
-    `      </BoxContainer>\n` +
-    `    </CustomDialog>\n` +
-    `  );\n` +
-    `};\n\n` +
-    `export default ${pascalName}FormModal;\n`;
-}
-
-// Generate Frontend Report View Component (using DynamicForm and crystal-report/jasper-report helpers)
-export function generateFrontendReportComponent(
-  moduleName: string,
-  moduleType: string,
-  fields: FieldDefinition[],
-  buttons: ButtonsSelection,
-  reportFileName: string,
-  reportEngine: 'direct' | 'crystal' | 'jasper' = 'direct',
-  pageHeader?: string
-): string {
-  if (!fields || fields.length === 0) {
-    return '// Add at least one field to generate code.';
-  }
-
-  const pascalName = toPascalCase(moduleName);
-  const camelName = toCamelCase(moduleName);
-  const typeLower = moduleType.toLowerCase();
-
-  const finalReportName = reportFileName || (toCamelCase(moduleName) + 'Report');
-  const camelReportName = toCamelCase(finalReportName);
-  const pascalReportName = toPascalCase(finalReportName);
-  const kebabReportName = toKebabCase(finalReportName);
-  const reportDisplayTitle = toPascalCase(finalReportName).replace(/([a-z])([A-Z])/g, '$1 $2');
-
-  // Map fields to DynamicField items
-  const dynamicFieldsStr = fields.map(f => {
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : getDefaultLabel(f.name);
-    let uiType = f.frontendType || (
-      f.type === 'Boolean' ? 'checkbox' :
-      f.type === 'LocalDate' ? 'calendar' :
-      'text'
-    );
-    if (f.name.toLowerCase().endsWith('status') || f.name.toLowerCase() === 'status') {
-      uiType = 'select';
-    }
-
-    const props: string[] = [];
-    props.push(`      type: '${uiType}'`);
-    props.push(`      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)}`);
-    props.push(`      label: '${label}'`);
-
-    if (uiType === 'select' || uiType === 'radio') {
-      props.push(`      options: dropdowns.${f.name}Options`);
-    }
-
-    if (f.isKey || f.isRequired) {
-      props.push(`      isRequired: true`);
-    }
-
-    if (uiType === 'calendar') {
-      const fromField = findMatchingFromField(f.name, fields);
-      const toField = findMatchingToField(f.name, fields);
-      if (fromField) {
-        props.push(`      minDate: searchForm.watch(${pascalName}ModelFields.${toSnakeCase(fromField)})`);
-      }
-      if (toField) {
-        props.push(`      maxDate: searchForm.watch(${pascalName}ModelFields.${toSnakeCase(toField)})`);
-      }
-    } else if (uiType === 'text') {
-      const maxLen = f.maxLength || (['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type) ? 20 : 100);
-      props.push(`      maxLength: ${maxLen}`);
-    }
-
-    return `    {\n` + props.join(',\n') + `,\n    }`;
-  }).join(',\n');
-
-  // Dropdown config if select/radio fields exist
-  const dropdownFields = fields.filter(f => {
-    const uiType = f.frontendType || (
-      f.type === 'Boolean' ? 'checkbox' :
-      f.type === 'LocalDate' ? 'calendar' :
-      'text'
-    );
-    const isSelect = f.name.toLowerCase().endsWith('status') || f.name.toLowerCase() === 'status' || uiType === 'select';
-    const isRadio = uiType === 'radio';
-    return isSelect || isRadio;
-  });
-
-  let dropdownImports = '';
-  if (dropdownFields.length > 0) {
-    dropdownImports = `import { dropdownService } from "@/_service/um/dropdown.service";\n` +
-                      `import { DropdownModel } from "@/_models/form.model";\n`;
-  }
-
-  const dropdownState = dropdownFields.length > 0
-    ? `  const [dropdowns, setDropdowns] = useState({\n` +
-      dropdownFields.map(f => `    ${f.name}Options: [] as DropdownModel[],`).join('\n') + `\n` +
-      `  });`
-    : '';
-
-  const dropdownFetch = dropdownFields.length > 0
-    ? `  useEffect(() => {\n` +
-      `    fetchDropdowns();\n` +
-      `  }, []);\n\n` +
-      `  const fetchDropdowns = async () => {\n` +
-      `    try {\n` +
-      `      // TODO: Fetch dropdown values for: ${dropdownFields.map(f => f.name).join(', ')}\n` +
-      `      /*\n` +
-      `      const [${dropdownFields.map(f => `${f.name}Res`).join(', ')}] = await Promise.all([\n` +
-      dropdownFields.map(f => `        dropdownService.getCtSysConfigDropdown("CODE_${f.name.toUpperCase()}", { showCode: true, required: ${f.isRequired ? 'true' : 'false'} }),`).join('\n') + `\n` +
-      `      ]);\n` +
-      `      setDropdowns(() => ({\n` +
-      dropdownFields.map(f => `        ${f.name}Options: (${f.name}Res.data ?? []).filter(\n` +
-                              `          (option) => option.value !== null && option.value !== ""\n` +
-                              `        ),`).join('\n') + `\n` +
-      `      }));\n` +
-      `      */\n` +
-      `    } catch (err) {\n` +
-      `      errorAlert(err);\n` +
-      `    }\n` +
-      `  };`
-    : '';
-
-  // Buttons configurations
-  const renderedButtons: string[] = [];
-  if (buttons.print) {
-    renderedButtons.push(`    { labelId: "BUTTON.PRINT", type: "submit", showButton: true },`);
-  }
-  if (buttons.clear) {
-    renderedButtons.push(`    { labelId: "BUTTON.CLEAR", type: "button", showButton: true, onClick: onClear },`);
-  }
-  if (buttons.close) {
-    renderedButtons.push(`    { labelId: "BUTTON.CLOSE", type: "button", showButton: true, onClick: onClose },`);
-  }
-  const buttonsGroup = renderedButtons.join('\n');
-
-  const hasDate = fields.some(f => f.type === 'LocalDate');
-
-  // Conditionally build imports
-  let reportImports = '';
-  if (reportEngine === 'crystal') {
-    reportImports += `import CrystalReportModal from "@/components/hpls/report/shared/crystalReportModal";\n`;
-  } else if (reportEngine === 'jasper') {
-    reportImports += `import JasperReportModal from "@/components/hpls/report/shared/jasperReportModal";\n`;
-  }
-  if (hasDate && reportEngine !== 'direct') {
-    reportImports += `import dayjs from "dayjs";\n`;
-  }
-
-  let directImports = '';
-  if (reportEngine === 'direct') {
-    directImports += `import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}.service";\n` +
-                     `import { loadingStore, useLoading } from "@/_providers/loader-provider";\n` +
-                     `import { FormHelper } from "@/_helpers/form-helper";\n` +
-                     `import { downloadBlob, resolveReportFileName } from "@/_helpers/crystal-report-helper";\n`;
-  }
-
-  let stateDeclarations = '';
-  if (reportEngine === 'direct') {
-    stateDeclarations += `  const setLoading = useLoading((s) => s.setLoading);`;
-  } else if (reportEngine === 'crystal') {
-    stateDeclarations += `  const [reportOpen, setReportOpen] = useState<boolean>(false);\n` +
-                         `  const [reportBaseParams, setReportBaseParams] = useState<unknown[]>([]);`;
-  } else if (reportEngine === 'jasper') {
-    stateDeclarations += `  const [reportOpen, setReportOpen] = useState<boolean>(false);\n` +
-                         `  const [reportParams, setReportParams] = useState<Record<string, string>>({});`;
-  }
-
-  let submitAction = '';
-  let formSubmitHandlerName = 'onExport';
-  if (reportEngine === 'direct') {
-    formSubmitHandlerName = 'onExport';
-    submitAction = `  const onExport = async (rawValues: z.infer<typeof ${pascalReportName}Schema>) => {\n` +
-                   `    if (loadingStore.getState().loading) {\n` +
-                   `      return;\n` +
-                   `    }\n\n` +
-                   `    const values = FormHelper.normalizeSearchParams(rawValues) as any;\n\n` +
-                   `    setLoading(true);\n` +
-                   `    try {\n` +
-                   `      const res = await ${camelName}Service.export${pascalReportName}(values);\n` +
-                   `      const fileName = resolveReportFileName('${reportDisplayTitle}', 'xlsx', res.headers?.["content-disposition"]);\n` +
-                   `      const blob = new Blob([res.data], { type: "application/octet-stream" });\n` +
-                   `      downloadBlob(blob, fileName);\n` +
-                   `    } catch (err) {\n` +
-                   `      errorAlert(err);\n` +
-                   `    } finally {\n` +
-                   `      setLoading(false);\n` +
-                   `    }\n` +
-                   `  };`;
-  } else if (reportEngine === 'crystal') {
-    formSubmitHandlerName = 'onPrint';
-    const crystalParamsList = fields.map(f => {
-      if (f.type === 'LocalDate') {
-        return `      fmt(rawValues.${f.name}, "")`;
-      } else {
-        return `      rawValues.${f.name} || "default"`;
-      }
-    }).join(',\n');
-    submitAction = `  const onPrint = (rawValues: z.infer<typeof ${pascalReportName}Schema>) => {\n` +
-                   `    const fmt = (d?: any, fallback = "default") =>\n` +
-                   `      d ? dayjs(d).format("DD/MM/YYYY") : fallback;\n` +
-                   `    setReportBaseParams([\n` +
-                   `${crystalParamsList}\n` +
-                   `    ]);\n` +
-                   `    setReportOpen(true);\n` +
-                   `  };`;
-  } else if (reportEngine === 'jasper') {
-    formSubmitHandlerName = 'onPrint';
-    const jasperParamsList = fields.map(f => {
-      if (f.type === 'LocalDate') {
-        return `      ${f.name}: rawValues.${f.name} ? dayjs(rawValues.${f.name}).format("DD/MM/YYYY") : ""`;
-      } else if (f.type === 'Boolean') {
-        return `      ${f.name}: rawValues.${f.name} || "N"`;
-      } else {
-        return `      ${f.name}: rawValues.${f.name} != null ? String(rawValues.${f.name}) : ""`;
-      }
-    }).join(',\n');
-    submitAction = `  const onPrint = (rawValues: z.infer<typeof ${pascalReportName}Schema>) => {\n` +
-                   `    setReportParams({\n` +
-                   `${jasperParamsList}\n` +
-                   `    });\n` +
-                   `    setReportOpen(true);\n` +
-                   `  };`;
-  }
-
-  // Close callback if exists
-  const closeAction = buttons.close
-    ? `\n\n  const onClose = () => {\n` +
-      `    console.log("Close report clicked");\n` +
-      `  }`
-    : '';
-
-  let reportModalComponent = '';
-  if (reportEngine === 'crystal') {
-    reportModalComponent = `      <CrystalReportModal\n` +
-                           `        open={reportOpen}\n` +
-                           `        onOpenChange={setReportOpen}\n` +
-                           `        reportName="${reportFileName}"\n` +
-                           `        baseParams={reportBaseParams}\n` +
-                           `        title={header}\n` +
-                           `      />`;
-  } else if (reportEngine === 'jasper') {
-    reportModalComponent = `      <JasperReportModal\n` +
-                           `        open={reportOpen}\n` +
-                           `        onOpenChange={setReportOpen}\n` +
-                           `        reportCode="${reportFileName}"\n` +
-                           `        params={reportParams}\n` +
-                           `        title={header}\n` +
-                           `      />`;
-  }
-
-  const modalJSX = reportModalComponent ? `\n${reportModalComponent}` : '';
-
-  return `import {\n` +
-         `  useState,\n` +
-         `  useEffect,\n` +
-         `} from "react";\n` +
-         `import { useForm } from "react-hook-form";\n\n` +
-         `import z from "zod";\n` +
-         `import { zodResolver } from "@hookform/resolvers/zod";\n\n` +
-         `import { CustomCard } from "@/components/layout/Form";\n` +
-         `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";\n` +
-         `import BoxContainer from "@/components/ui/box-container";\n\n` +
-         `${dropdownImports}` +
-         `${directImports}` +
-         `${reportImports}\n` +
-         `import { useAlert } from "@/_providers/alert-provider";\n` +
-         `import { ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\n` +
-         `import {\n` +
-         `  ${pascalReportName}Schema,\n` +
-         `  default${pascalReportName}Values,\n` +
-         `} from "./schemas/${reportFileName}Schema";\n\n` +
-         `function ${camelReportName}() {\n` +
-         `${[
-            `  const header = "${pageHeader || `รายงานข้อมูล ${pascalName}`}";`,
-            dropdownState,
-            [
-              `  const { errorAlert, warningToast } = useAlert();`,
-              stateDeclarations
-            ].filter(Boolean).join('\n'),
-            dropdownFetch
-          ].filter(Boolean).join('\n\n')}\n\n` +
-         `  const dynamicForm: DynamicField[] = [\n` +
-         `${dynamicFieldsStr}\n` +
-         `  ]\n\n` +
-         `  const searchForm = useForm<z.infer<typeof ${pascalReportName}Schema>>({\n` +
-         `    resolver: zodResolver(${pascalReportName}Schema),\n` +
-         `    defaultValues: default${pascalReportName}Values,\n` +
-         `    mode: "onChange",\n` +
-         `  })\n\n` +
-         `  const onClear = () => {\n` +
-         `    searchForm.reset(default${pascalReportName}Values);\n` +
-         `  };\n\n` +
-         `  const formButtons: ButtonConfig[] = [\n` +
-         `${buttonsGroup}\n` +
-         `  ];\n\n` +
-         `${submitAction}` +
-         `${closeAction}\n\n` +
-         `  return (\n` +
-         `    <div className="bg-muted flex flex-col w-full h-full">\n` +
-         `      <div className="flex flex-row w-full p-6 pb-0 md:p-10 md:pb-0">\n` +
-         `        <CustomCard header={header} className="w-full h-fit">\n` +
-         `          <BoxContainer>\n` +
-         `            <DynamicForm\n` +
-         `              inputFormControl={searchForm}\n` +
-         `              formId="searchForm"\n` +
-         `              fields={dynamicForm}\n` +
-         `              buttons={formButtons}\n` +
-         `              onSubmit={${formSubmitHandlerName}}\n` +
-         `              columnsNo="2"\n` +
-         `              buttonColumnsNo="2"\n` +
-         `            />\n` +
-         `          </BoxContainer>\n` +
-         `        </CustomCard>\n` +
-         `      </div>${modalJSX}\n` +
-         `    </div>\n` +
-         `  )\n` +
-         `}\n\n` +
-         `export default ${camelReportName};\n`;
+  return `import { Constants } from "@/_helpers/constants";\nimport axios from "@/utils/axiosInstance";\n\nexport const ${toSnakeCase(moduleName)}_URL = \`\${Constants.URL_${typeUpper}}/${camelName}\`;\n\nexport const ${camelName}Service = {\n  // Methods\n};\n`;
 }
 
 function getZodSchemaField(f: FieldDefinition): string {
   const isReq = f.isRequired ?? false;
   const maxLen = f.maxLength;
   if (f.type === 'String') {
-    if (maxLen !== undefined && maxLen > 0) {
-      if (isReq) {
-        return `ZodHelper.getStringField(true, 1, { max: ${maxLen} })`;
-      } else {
-        return `ZodHelper.getStringField(false, undefined, { max: ${maxLen} })`;
-      }
-    } else {
-      if (isReq) {
-        return `ZodHelper.getStringField(true, 1)`;
-      } else {
-        return `ZodHelper.getStringField()`;
-      }
-    }
+    return maxLen !== undefined && maxLen > 0
+      ? `ZodHelper.getStringField(${isReq ? 'true, 1' : 'false, undefined'}, { max: ${maxLen} })`
+      : `ZodHelper.getStringField(${isReq ? 'true, 1' : ''})`;
   } else if (f.type === 'Boolean') {
     return `ZodHelper.getStringBooleanCheckboxField(${isReq ? 'true' : ''})`;
   } else if (f.type === 'LocalDate') {
@@ -1709,158 +314,429 @@ function getZodSchemaField(f: FieldDefinition): string {
   }
 }
 
-// Generate separate search schema file
-export function generateFrontendSearchSchema(
-  moduleName: string,
-  fields: FieldDefinition[]
-): string {
+export function generateFrontendSearchSchema(moduleName: string, fields: FieldDefinition[]): string {
   const pascalName = toPascalCase(moduleName);
-
-  const zodFields = fields.map(f => {
-    return `  ${f.name}: ${getZodSchemaField(f)}`;
-  }).join(',\n');
-
-  const defaults = fields.map(f => {
-    if (f.type === 'Boolean') return `  ${f.name}: "N"`;
-    if (f.type === 'LocalDate') return `  ${f.name}: undefined`;
-    return `  ${f.name}: ""`;
-  }).join(',\n');
-
-  return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
-    `import { z } from "zod";\n\n` +
-    `export const ${pascalName}SearchSchema = z.object({\n` +
-    `${zodFields}\n` +
-    `});\n\n` +
-    `export const default${pascalName}SearchValues = {\n` +
-    `${defaults}\n` +
-    `};\n`;
+  const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
+  const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
+  return `import { ZodHelper } from "@/_helpers/zod-helper";\nimport { z } from "zod";\n\nexport const ${pascalName}SearchSchema = z.object({\n${zodFields}\n});\n\nexport const default${pascalName}SearchValues = {\n${defaults}\n};\n`;
 }
 
-// Generate separate search table MRT column configs
-export function generateFrontendSearchTable(
+export function generateFrontendSearchTable(moduleName: string, moduleType: string, fields: FieldDefinition[]): string {
+  const pascalName = toPascalCase(moduleName);
+  const camelName = toCamelCase(moduleName);
+  const typeLower = moduleType.toLowerCase();
+  const columnsDef = fields.map(f => f.type === 'LocalDate' ? `          constructDateColumn({\n            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n            header: "${f.label || getDefaultLabel(f.name)}",\n          })` : `          {\n            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n            header: "${f.label || getDefaultLabel(f.name)}",\n          }`).join(',\n');
+  return `"use client";\nimport { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\nimport { constructDateColumn } from "@/components/layout/Form";\nimport { CustomColTool } from "@/components/layout/Table";\nimport { MRT_ColumnDef } from "material-react-table";\nimport { useMemo } from "react";\nexport const ${pascalName}TableColumns = {\n  GetColumns: (editAction: (data: ${pascalName}Model) => void, deleteAction: (data: ${pascalName}Model) => void) => {\n    return useMemo<MRT_ColumnDef<${pascalName}Model>[]>(() => [\n      { accessorKey: "id", header: "No.", Cell: ({ row }) => <div>{row.index + 1}</div>, muiTableBodyCellProps: { align: "center" }, size: 100 },\n      { accessorKey: "tool", header: "Action", Cell: ({ row }) => <CustomColTool goToEditPage={() => editAction(row.original)} goToDeletePage={() => deleteAction(row.original)} isEdit={true} isDelete={true} />, size: 150 },\n${columnsDef}\n    ], [editAction, deleteAction]);\n  }\n};\n`;
+}
+
+export function generateFrontendReportSchema(moduleName: string, fields: FieldDefinition[], reportFileName: string): string {
+  const finalReportName = reportFileName || (toCamelCase(moduleName) + 'Report');
+  const pascalReportName = toPascalCase(finalReportName);
+  const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
+  const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
+  return `import { ZodHelper } from "@/_helpers/zod-helper";\nimport { z } from "zod";\n\nexport const ${pascalReportName}Schema = z.object({\n${zodFields}\n});\n\nexport const default${pascalReportName}Values = {\n${defaults}\n};\n`;
+}
+
+export function generateFrontendFormSchema(moduleName: string, fields: FieldDefinition[]): string {
+  const pascalName = toPascalCase(moduleName);
+  const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
+  const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
+  return `import { ZodHelper } from "@/_helpers/zod-helper";\nimport { z } from "zod";\n\nexport const ${pascalName}FormSchema = z.object({\n${zodFields}\n});\n\nexport const default${pascalName}FormValues = {\n${defaults}\n};\n`;
+}
+
+export function generateFrontendSearchStore(moduleName: string, moduleType: string): string {
+  const pascalName = toPascalCase(moduleName);
+  const camelName = toCamelCase(moduleName);
+  const typeLower = moduleType.toLowerCase();
+  return `"use client";\n\nimport { create } from "zustand";\nimport { createJSONStorage, persist } from "zustand/middleware";\nimport { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}/${camelName}.model";\nimport { default${pascalName}Values } from "@/components/hpls/${typeLower}/${camelName}/schemas/${camelName}Schema";\n\ninterface ${pascalName}SearchState {\n  searchParams: ${pascalName}Model;\n  setSearchParams: (params: ${pascalName}Model) => void;\n  clearSearchParams: () => void;\n}\nconst initial${pascalName}SearchState: ${pascalName}Model = { ...default${pascalName}Values };\nexport const use${pascalName}SearchStore = create<${pascalName}SearchState>()(\n  persist((set) => ({\n    searchParams: initial${pascalName}SearchState,\n    setSearchParams: (params) => set({ searchParams: params }),\n    clearSearchParams: () => set({ searchParams: initial${pascalName}SearchState }),\n  }), { name: "${camelName}-search-store", storage: createJSONStorage(() => localStorage) })\n);\n`;
+}
+
+function getFieldInputTemplate(f: FieldDefinition, pascalName: string): string {
+  let label = f.label || getDefaultLabel(f.name);
+  const disableSnippet = f.disable ? `,\n      disable: true` : '';
+  
+  // 1. ตรวจสอบ UI Type จาก frontendType ที่เลือกบนหน้าจอเป็นอันดับแรก ถ้านิ่งสนิทค่อย Fallback ตาม Backend Type
+  let uiType = f.frontendType || 'text';
+  if (!f.frontendType) {
+    if (f.type === 'Boolean') uiType = 'checkbox';
+    else if (f.type === 'LocalDate') uiType = 'calendar';
+    else if (['Integer', 'Long', 'Double', 'BigDecimal'].includes(f.type)) uiType = 'number';
+  }
+
+  // 2. ถ้าเป็น select หรือ radio ให้ปั่นพ่วงอาร์เรย์ options ของโปรเจกต์เข้าไปด้วย
+  let optionsSnippet = '';
+  if (uiType === 'select' || uiType === 'radio') {
+    optionsSnippet = `,\n      options: dropdowns.${toCamelCase(f.name)}Options`;
+  }
+
+  // 3. พ่นโครงสร้างอ็อบเจกต์ส่งออกตามประเภท UI
+  if (uiType === 'checkbox') {
+    return `    {\n      type: 'checkbox',\n      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n      label: '${label}'${disableSnippet}\n    }`;
+  } else if (uiType === 'calendar') {
+    let rangeProps = '';
+    if (f.name.toLowerCase().includes('from')) {
+      const matchTo = f.name.replace(/from/i, 'To');
+      rangeProps = `,\n      maxDate: ${toCamelCase(matchTo)}`;
+    } else if (f.name.toLowerCase().includes('to')) {
+      const matchFrom = f.name.replace(/to/i, 'From');
+      rangeProps = `,\n      minDate: ${toCamelCase(matchFrom)}`;
+    }
+    return `    {\n      type: 'calendar',\n      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n      label: '${label}',\n      isRequired: ${f.isRequired ? 'true' : 'false'}${rangeProps}${disableSnippet}\n    }`;
+  } else {
+    // รองรับ text, number, select, radio ได้อย่างถูกต้องแม่นยำตามที่เลือกบน UI
+    return `    {\n      type: '${uiType}',\n      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n      label: '${label}'${optionsSnippet}${disableSnippet}\n    }`;
+  }
+}
+
+function getDealerFieldsTemplate(pascalName: string): string {
+  return `    {\n      type: 'text',\n      fieldName: ${pascalName}ModelFields.DEALER_CODE,\n      label: 'รหัส Dealer',\n      maxLength: 20,\n      onBlur: (value: string) => handleDealerBlur(value),\n      button: {\n        labelId: 'BUTTON.SEARCH',\n        type: 'button',\n        text: '',\n        showButton: true,\n        onClick: () => setDealerPopup(true),\n      } as ButtonConfig,\n    },\n` +
+         `    {\n      type: 'text',\n      fieldName: ${pascalName}ModelFields.DEALER_NAME,\n      label: ' ',\n      disable: true,\n      maxLength: 200,\n    }`;
+}
+
+export function generateFrontendDetailComponent(moduleName: string, moduleType: string, fields: FieldDefinition[], buttons: ButtonsSelection): string {
+  const pascalName = toPascalCase(moduleName);
+  return `"use client";\nimport { useForm } from "react-hook-form";\nimport { CustomDialog } from "@/components/layout/Form/CustomDialog";\nimport DynamicForm from "@/components/layout/Form/dynamic-form-builder";\nimport BoxContainer from "@/components/ui/box-container";\n\nconst ${pascalName}FormModal = ({ open, setOpen }: any) => {\n  const modalForm = useForm();\n  return (\n    <CustomDialog open={open} onOpenChange={setOpen} title="ข้อมูล" size="lg">\n      <BoxContainer variant="compact">\n        <DynamicForm inputFormControl={modalForm} formId="modalForm" fields={[]} columnsNo="1" />\n      </BoxContainer>\n    </CustomDialog>\n  );\n};\nexport default ${pascalName}FormModal;\n`;
+}
+
+// ============================================================================
+// 🔥 2. FRONTEND SEARCH VIEW COMPONENT GENERATOR (จัดทัพโครงสร้างตัวแปรและลำดับตรงเป๊ะ)
+// ============================================================================
+export function generateFrontendSearchComponent(
   moduleName: string,
   moduleType: string,
-  fields: FieldDefinition[]
+  fields: FieldDefinition[],
+  buttons: ButtonsSelection,
+  pageHeader?: string,
+  options?: GeneratorOptions
 ): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
   const pascalName = toPascalCase(moduleName);
   const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
 
-  const columnsDef = fields.map(f => {
-    const label = f.label && f.label.trim() !== '' ? f.label.trim() : getDefaultLabel(f.name);
-    if (f.type === 'LocalDate') {
-      return `          constructDateColumn({\n` +
-             `            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n` +
-             `            header: "${label}",\n` +
-             `          })`;
-    } else {
-      return `          {\n` +
-             `            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n` +
-             `            header: "${label}",\n` +
-             `          }`;
-    }
-  }).join(',\n');
+  // ดึงกลุ่ม .watch ออกมาเตรียมประกาศไว้ภายนอกก่อนถึง Dynamic Fields
+  const dateFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
+  const watchLines = dateFields.map(f => `  const ${f.name} = searchForm.watch(${pascalName}ModelFields.${toSnakeCase(f.name)});`).join('\n');
+
+  let inputsStr = fields.map(f => getFieldInputTemplate(f, pascalName)).join(',\n');
+  if (options?.hasDealerSearch) {
+    inputsStr = getDealerFieldsTemplate(pascalName) + (inputsStr ? ",\n" + inputsStr : "");
+  }
+
+  // ตัวเลือกโครงสร้าง Zustand Store
+  let storeImport = options?.useSearchStore ? `import { use${pascalName}SearchStore } from "@/_providers/${typeLower}/${camelName}/${camelName}SearchStore.provider";\n` : '';
+  let storeHooks = options?.useSearchStore ? 
+    `  const searchParams = use${pascalName}SearchStore((s) => s.searchParams);\n` +
+    `  const setSearchParams = use${pascalName}SearchStore((s) => s.setSearchParams);\n` +
+    `  const clearSearchParams = use${pascalName}SearchStore((s) => s.clearSearchParams);\n\n` : '';
+    
+  let storeEffect = options?.useSearchStore ? 
+    `  useEffect(() => {\n` +
+    `    if (searchParams) {\n` +
+    `      searchForm.reset({\n` +
+    `        ...searchParams,\n` +
+    `      });\n` +
+    `    }\n` +
+    `  }, [searchParams]);\n\n` : '';
+  
+  return `"use client";\n\n` +
+    `// React core\n` +
+    `import { useRef, useState, useEffect, useCallback } from "react";\n` +
+    `import { useForm } from "react-hook-form";\n\n` +
+    `// External libs\n` +
+    `import z from "zod";\n` +
+    `import { zodResolver } from "@hookform/resolvers/zod";\n\n` +
+    `// Layout / UI components\n` +
+    `import { CustomCard } from "@/components/layout/Form/Card";\n` +
+    `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";\n` +
+    `import BoxContainer from "@/components/ui/box-container";\n\n` +
+    `// Shared / feature components\n` +
+    `${options?.hasDealerSearch ? `import CoDealerPopUp from "../shared/coDealerPopUp";\n` : ''}` +
+    `\n// Services\n` +
+    `${options?.hasDealerSearch ? `import { popupCoService } from "@/_service/co/popupCo.service";\n` : ''}` +
+    `import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}/${camelName}.service";\n\n` +
+    `// Providers / stores\n` +
+    `import { useLoading } from "@/_providers/loader-provider";\n` +
+    `import { useAlert } from "@/_providers/alert-provider";\n` +
+    `${storeImport}\n` +
+    `// Helpers / utils\n` +
+    `import { FormHelper } from "@/_helpers/form-helper";\n\n` +
+    `// Schemas / models\n` +
+    `import { ${pascalName}Schema, default${pascalName}Values } from "./schemas/${camelName}Schema";\n` +
+    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}/${camelName}.model";\n` +
+    `${options?.hasDealerSearch ? `import { PopupCoDealerModel } from "@/_models/co/popupCo.model";\n` : ''}\n` +
+    `const header = "${pageHeader || `ค้นหาข้อมูล ${pascalName}`}";\n\n` +
+    `const ${pascalName} = () => {\n` +
+         (options?.hasDealerSearch ? `  const [dealerPopup, setDealerPopup] = useState<boolean>(false);\n  const [dealerData, setDealerData] = useState<PopupCoDealerModel>({});\n\n  const lastDealerCode = useRef<string>("");\n\n` : '') +
+    `  const { errorAlert } = useAlert();\n` +
+    `  const loading = useLoading((s) => s.loading);\n` +
+    `  const setLoading = useLoading((s) => s.setLoading);\n\n` +
+         storeHooks +
+    `  const searchForm = useForm<z.infer<typeof ${pascalName}Schema>>({\n` +
+    `    resolver: zodResolver(${pascalName}Schema),\n` +
+    `    defaultValues: ${options?.useSearchStore ? 'searchParams' : `default${pascalName}Values`},\n` +
+    `    mode: "onChange",\n` +
+    `  });\n\n` +
+         storeEffect +
+         (options?.hasDealerSearch ? `  useEffect(() => {\n    if (dealerData?.bpCode) {\n      searchForm.setValue(${pascalName}ModelFields.DEALER_CODE, dealerData.bpCode ?? "");\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, dealerData.dealerThaiName ?? "");\n      lastDealerCode.current = dealerData.bpCode ?? "";\n    }\n  }, [dealerData]);\n\n  const handleDealerBlur = useCallback(async (value: string) => {\n    if (!value || value.trim() === "") {\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n      lastDealerCode.current = "";\n      return;\n    }\n    if (value === lastDealerCode.current) return;\n    lastDealerCode.current = value;\n    try {\n      const res = await popupCoService.getDealerByCode(value);\n      if (res.data?.status && res.data?.object) {\n        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, res.data.object.dealerThaiName ?? "");\n      } else {\n        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n      }\n    } catch (err) {\n      errorAlert(err);\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n    }\n  }, [searchForm, errorAlert]);\n\n` : '') +
+    `  const onClear = () => {\n` +
+    `    ${options?.useSearchStore ? 'clearSearchParams();\n' : ''}` +
+    `    searchForm.reset(default${pascalName}Values);\n` +
+    `${options?.hasDealerSearch ? '    lastDealerCode.current = "";\n' : ''}` +
+    `  };\n\n` +
+         (watchLines ? watchLines + `\n\n` : '') +
+    `  const dynamicForm: DynamicField[] = [\n` +
+    `${inputsStr}\n` +
+    `  ];\n\n` +
+    `  const formButtons: ButtonConfig[] = [\n` +
+    `    { labelId: "BUTTON.SEARCH", type: "submit", showButton: true },\n` +
+    `    { labelId: "BUTTON.CLEAR", type: "button", showButton: true, onClick: onClear }\n` +
+    `  ];\n\n` +
+    `  return (\n` +
+    `    <div className="bg-muted flex flex-col w-full h-full">\n` +
+    `      <div className="flex flex-row w-full p-6 pb-0 md:p-10 md:pb-0">\n` +
+    `        <CustomCard header={header} className="w-full h-fit">\n` +
+    `          <BoxContainer>\n` +
+    `            <DynamicForm\n` +
+    `              inputFormControl={searchForm}\n` +
+    `              formId="searchForm"\n` +
+    `              fields={dynamicForm}\n` +
+    `              buttons={formButtons}\n` +
+    `              onSubmit={() => {}}\n` +
+    `              columnsNo="2"\n` +
+    `              buttonColumnsNo="2"\n` +
+    `            />\n` +
+    `          </BoxContainer>\n` +
+    `        </CustomCard>\n` +
+    `      </div>\n` +
+    `${options?.hasDealerSearch ? `      <CoDealerPopUp popup={dealerPopup} setPopup={setDealerPopup} setReturnData={setDealerData} />\n` : ''}` +
+    `    </div>\n` +
+    `  );\n` +
+    `};\n\n` +
+    `export default ${pascalName};\n`;
+}
+
+// ============================================================================
+// 🔥 4. FRONTEND REPORT VIEW COMPONENT GENERATOR (สถาปัตยกรรมระดับสูงสุดตรงตามต้นฉบับ)
+// ============================================================================
+export function generateFrontendReportComponent(
+  moduleName: string,
+  moduleType: string,
+  fields: FieldDefinition[],
+  buttons: ButtonsSelection,
+  reportFileName: string,
+  reportEngine: 'direct' | 'crystal' | 'jasper' = 'direct',
+  pageHeader?: string,
+  options?: GeneratorOptions
+): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
+  const pascalName = toPascalCase(moduleName);
+  const camelName = toCamelCase(moduleName);
+  const typeLower = moduleType.toLowerCase();
+
+  // ดึงกลุ่ม .watch ออกมาเตรียมประกาศไว้ด้านบน
+  const dateFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
+  const watchLines = dateFields.map(f => `  const ${f.name} = searchForm.watch(${pascalName}ModelFields.${toSnakeCase(f.name)});`).join('\n');
+
+  // จัดเตรียมฟิลด์อินพุต
+  let inputsStr = fields.map(f => getFieldInputTemplate(f, pascalName)).join(',\n');
+  if (options?.hasDealerSearch) {
+    inputsStr = getDealerFieldsTemplate(pascalName) + (inputsStr ? ",\n" + inputsStr : "");
+  }
+
+  const reportDisplayTitle = toPascalCase(reportFileName || (moduleName + 'Report')).replace(/([a-z])([A-Z])/g, '$1 $2');
+
+  // ข้อมูล Zustand Store ที่สอดคล้องตามตัวเลือกจริง
+  let storeImport = options?.useSearchStore ? `import { use${pascalName}SearchStore } from "@/_providers/${typeLower}/${camelName}/${camelName}SearchStore.provider";\n` : '';
+  let storeHooks = options?.useSearchStore ? 
+    `  const searchParams = use${pascalName}SearchStore((s) => s.searchParams);\n` +
+    `  const setSearchParams = use${pascalName}SearchStore((s) => s.setSearchParams);\n` +
+    `  const clearSearchParams = use${pascalName}SearchStore((s) => s.clearSearchParams);\n\n` : '';
+    
+// ดึงฟิลด์ที่เป็น LocalDate ทั้งหมดที่มีในหน้าจอมาสร้างบรรทัดแปลง Date object แบบไดนามิก
+  const localDateFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
+  const storeEffectFieldsStr = localDateFields.map(f => {
+    const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
+    return `        [${fieldVar}]: searchParams[${fieldVar}] ? new Date(searchParams[${fieldVar}]) : undefined,`;
+  }).join('\n');
+
+// 1. สร้างส่วนประกาศตัวแปรก่อนเข้าฟังก์ชัน reset
+  const watchFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
+  const dateConstDeclarations = watchFields.map(f => {
+    const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
+    return `      const raw_${f.name} = searchParams[${fieldVar}];`;
+  }).join('\n');
+
+  // 2. สร้างบรรทัด map ค่าลงใน reset object
+  const dateResetMappings = watchFields.map(f => {
+    const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
+    return `        [${fieldVar}]: raw_${f.name} ? new Date(raw_${f.name}) : undefined,`;
+  }).join('\n');
+
+  // 3. ประกอบเป็น useEffect เทมเพลต
+  let storeEffect = options?.useSearchStore ? 
+    `  useEffect(() => {\n` +
+    `    if (searchParams) {\n` +
+    `${dateConstDeclarations}\n\n` +
+    `      searchForm.reset({\n` +
+    `        ...searchParams,\n` +
+    `${dateResetMappings}\n` +
+    `      });\n` +
+    `    }\n` +
+    `  }, [searchParams]);\n\n` : '';
+  let storeSaveAction = options?.useSearchStore ? `    setSearchParams(searchForm.getValues());\n\n` : '';
+  let storeClearAction = options?.useSearchStore ? `clearSearchParams();\n` : '';
 
   return `"use client";\n\n` +
-    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\n` +
-    `import { constructDateColumn } from "@/components/layout/Form";\n` +
-    `import { CustomColTool } from "@/components/layout/Table";\n` +
-    `import { MRT_ColumnDef } from "material-react-table";\n` +
-    `import { useMemo } from "react";\n\n` +
-    `export const ${pascalName}TableColumns = {\n` +
-    `  GetColumns: (\n` +
-    `    editAction: (data: ${pascalName}Model) => void,\n` +
-    `    deleteAction: (data: ${pascalName}Model) => void\n` +
-    `  ) => {\n` +
-    `    return useMemo<MRT_ColumnDef<${pascalName}Model>[]>((\n` +
-    `      () =>\n` +
-    `        [\n` +
-    `          {\n` +
-    `            accessorKey: "id",\n` +
-    `            header: "No.",\n` +
-    `            Cell: ({ row }) => <div>{row.index + 1}</div>,\n` +
-    `            muiTableBodyCellProps: { align: "center" },\n` +
-    `            size: 100,\n` +
-    `          },\n` +
-    `          {\n` +
-    `            accessorKey: "tool",\n` +
-    `            header: "Action",\n` +
-    `            Cell: ({ row }) => {\n` +
-    `              const active = row.original.status === "A";\n` +
-    `              return (\n` +
-    `                <div className="flex justify-center gap-1">\n` +
-    `                  <CustomColTool\n` +
-    `                    goToEditPage={() => editAction(row.original)}\n` +
-    `                    goToDeletePage={() => deleteAction(row.original)}\n` +
-    `                    isEdit={active}\n` +
-    `                    isDelete={active}\n` +
-    `                  />\n` +
-    `                </div>\n` +
-    `              );\n` +
-    `            },\n` +
-    `            size: 150,\n` +
-    `            muiTableBodyCellProps: { align: "center" },\n` +
-    `          },\n` +
-    `${columnsDef}\n` +
-    `        ] as MRT_ColumnDef<${pascalName}Model>[],\n` +
-    `      [editAction, deleteAction]\n` +
-    `    );\n` +
-    `  },\n` +
-    `};\n`;
+    `// React core\n` +
+    `import { useRef, useState, useEffect, useCallback } from "react";\n` +
+    `import { useForm } from "react-hook-form";\n\n` +
+    `// External libs\n` +
+    `import z from "zod";\n` +
+    `import { zodResolver } from "@hookform/resolvers/zod";\n\n` +
+    `// Layout / UI components\n` +
+    `import { CustomCard } from "@/components/layout/Form/Card";\n` +
+    `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";\n` +
+    `import BoxContainer from "@/components/ui/box-container";\n\n` +
+    `// Shared / feature components\n` +
+    `${options?.hasDealerSearch ? `import CoDealerPopUp from "../shared/coDealerPopUp";\n` : ''}` +
+    `\n// Services\n` +
+    `${options?.hasDealerSearch ? `import { popupCoService } from "@/_service/co/popupCo.service";\n` : ''}` +
+    `import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}/${camelName}.service";\n\n` +
+    `// Providers / stores\n` +
+    `import { useLoading } from "@/_providers/loader-provider";\n` +
+    `import { useAlert } from "@/_providers/alert-provider";\n` +
+    `${storeImport}\n` +
+    `// Helpers / utils\n` +
+    `import { FormHelper } from "@/_helpers/form-helper";\n` +
+    `import { downloadBlob, resolveReportFileName } from "@/_helpers/crystal-report-helper";\n\n` +
+    `// Schemas / models\n` +
+    `import { ${pascalName}Schema, default${pascalName}Values } from "./schemas/${camelName}Schema";\n` +
+    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}/${camelName}.model";\n` +
+    `${options?.hasDealerSearch ? `import { PopupCoDealerModel } from "@/_models/co/popupCo.model";\n` : ''}\n` +
+    `const header = "${pageHeader || `รายงานข้อมูล ${pascalName}`}";\n\n` +
+    `const ${pascalName} = () => {\n` +
+         (options?.hasDealerSearch ? `  const [dealerPopup, setDealerPopup] = useState<boolean>(false);\n  const [dealerData, setDealerData] = useState<PopupCoDealerModel>({});\n\n  const lastDealerCode = useRef<string>("");\n\n` : '') +
+    `  const { errorAlert } = useAlert();\n` +
+    `  const loading = useLoading((s) => s.loading);\n` +
+    `  const setLoading = useLoading((s) => s.setLoading);\n\n` +
+         storeHooks +
+    `  const searchForm = useForm<z.infer<typeof ${pascalName}Schema>>({\n` +
+    `    resolver: zodResolver(${pascalName}Schema),\n` +
+    `    defaultValues: ${options?.useSearchStore ? 'searchParams' : `default${pascalName}Values`},\n` +
+    `    mode: "onChange",\n` +
+    `  });\n\n` +
+         storeEffect +
+         (options?.hasDealerSearch ? `  useEffect(() => {\n    if (dealerData?.bpCode) {\n      searchForm.setValue(${pascalName}ModelFields.DEALER_CODE, dealerData.bpCode ?? "");\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, dealerData.dealerThaiName ?? "");\n      lastDealerCode.current = dealerData.bpCode ?? "";\n    }\n  }, [dealerData]);\n\n  const handleDealerBlur = useCallback(async (value: string) => {\n    if (!value || value.trim() === "") {\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n      lastDealerCode.current = "";\n      return;\n    }\n    if (value === lastDealerCode.current) return;\n    lastDealerCode.current = value;\n    try {\n      const res = await popupCoService.getDealerByCode(value);\n      if (res.data?.status && res.data?.object) {\n        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, res.data.object.dealerThaiName ?? "");\n      } else {\n        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n      }\n    } catch (err) {\n      errorAlert(err);\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n    }\n  }, [searchForm, errorAlert]);\n\n` : '') +
+    `  const onClear = () => {\n` +
+    `    ${storeClearAction}` +
+    `    searchForm.reset(default${pascalName}Values);\n` +
+    `${options?.hasDealerSearch ? '    lastDealerCode.current = "";\n' : ''}` +
+    `  };\n\n` +
+         (watchLines ? watchLines + `\n\n` : '') +
+    `  const dynamicForm: DynamicField[] = [\n` +
+    `${inputsStr}\n` +
+    `  ];\n\n` +
+    `  const formButtons: ButtonConfig[] = [\n` +
+    `    { labelId: "BUTTON.PRINT", type: "submit", showButton: true },\n` +
+    `    { labelId: "BUTTON.CLEAR", type: "button", showButton: true, onClick: onClear }\n` +
+    `  ];\n\n` +
+    `  const onExport = async (rawValues: z.infer<typeof ${pascalName}Schema>) => {\n` +
+    `    if (loading) {\n` +
+    `      return;\n` +
+    `    }\n\n` +
+         storeSaveAction +
+    `    const values = FormHelper.normalizeSearchParams(rawValues) as ${pascalName}Model;\n\n` +
+    `    setLoading(true);\n` +
+    `    try {\n` +
+    `      const res = await ${camelName}Service.export${pascalName}(values);\n\n` +
+    `      if (!res.data || res.data.size === 0) {\n` +
+    `        errorAlert("ไม่พบข้อมูลที่ค้นหา");\n` +
+    `        setLoading(false);\n` +
+    `        return;\n` +
+    `      }\n\n` +
+    `      const fileName = resolveReportFileName('${reportDisplayTitle}', 'xlsx', res.headers?.["content-disposition"]);\n` +
+    `      const blob = new Blob([res.data], { type: "application/octet-stream" });\n` +
+    `      downloadBlob(blob, fileName);\n` +
+    `    } catch (err) {\n` +
+    `      errorAlert(err);\n` +
+    `    } finally {\n` +
+    `      setLoading(false);\n` +
+    `    }\n` +
+    `  };\n\n` +
+    `  return (\n` +
+    `    <div className="bg-muted flex flex-col w-full h-full">\n` +
+    `      <div className="flex flex-row w-full p-6 pb-0 md:p-10 md:pb-0">\n` +
+    `        <CustomCard header={header} className="w-full h-fit">\n` +
+    `          <BoxContainer>\n` +
+    `            <DynamicForm\n` +
+    `              inputFormControl={searchForm}\n` +
+    `              formId="searchForm"\n` +
+    `              fields={dynamicForm}\n` +
+    `              buttons={formButtons}\n` +
+    `              onSubmit={onExport}\n` +
+    `              columnsNo="2"\n` +
+    `              buttonColumnsNo="2"\n` +
+    `            />\n` +
+    `          </BoxContainer>\n` +
+    `        </CustomCard>\n` +
+    `      </div>\n` +
+    `${options?.hasDealerSearch ? `      <CoDealerPopUp popup={dealerPopup} setPopup={setDealerPopup} setReturnData={setDealerData} />\n` : ''}` +
+    `    </div>\n` +
+    `  );\n` +
+    `};\n\n` +
+    `export default ${pascalName};\n`;
 }
 
-// Generate separate report schema file
-export function generateFrontendReportSchema(
-  moduleName: string,
-  fields: FieldDefinition[],
-  reportFileName: string
-): string {
-  const finalReportName = reportFileName || (toCamelCase(moduleName) + 'Report');
-  const pascalReportName = toPascalCase(finalReportName);
-
-  const zodFields = fields.map(f => {
-    return `  ${f.name}: ${getZodSchemaField(f)}`;
-  }).join(',\n');
-
-  const defaults = fields.map(f => {
-    if (f.type === 'Boolean') return `  ${f.name}: "N"`;
-    if (f.type === 'LocalDate') return `  ${f.name}: undefined`;
-    return `  ${f.name}: ""`;
-  }).join(',\n');
-
-  return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
-    `import { z } from "zod";\n\n` +
-    `export const ${pascalReportName}Schema = z.object({\n` +
-    `${zodFields}\n` +
-    `});\n\n` +
-    `export const default${pascalReportName}Values = {\n` +
-    `${defaults}\n` +
-    `};\n`;
-}
-
-// Generate separate form schema file
-export function generateFrontendFormSchema(
-  moduleName: string,
-  fields: FieldDefinition[]
-): string {
+// ข้อที่ 5: ฟังก์ชันสร้างไฟล์สคริปต์สิทธิ์ Oracle SQL อัตโนมัติ (คงเดิมไว้)
+export function generatePermissionSQL(moduleName: string, moduleType: string, options: GeneratorOptions): string {
+  const programId = options.programId || 'COPR07';
+  const legacyUrl = options.legacyUrl || `/${programId}${toPascalCase(moduleName)}.do`;
+  const routingPath = options.routingPath || `/${toCamelCase(moduleName)}`;
+  const roleCode = options.roleCode || 'SKL-IT-ASS';
   const pascalName = toPascalCase(moduleName);
 
-  const zodFields = fields.map(f => {
-    return `  ${f.name}: ${getZodSchemaField(f)}`;
-  }).join(',\n');
-
-  const defaults = fields.map(f => {
-    if (f.type === 'Boolean') return `  ${f.name}: "N"`;
-    if (f.type === 'LocalDate') return `  ${f.name}: undefined`;
-    return `  ${f.name}: ""`;
-  }).join(',\n');
-
-  return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
-    `import { z } from "zod";\n\n` +
-    `export const ${pascalName}FormSchema = z.object({\n` +
-    `${zodFields}\n` +
-    `});\n\n` +
-    `export const default${pascalName}FormValues = {\n` +
-    `${defaults}\n` +
-    `};\n`;
+  return `-- ============================================================================\n` +
+         `-- PERMISSION — ${programId} (${pascalName})\n` +
+         `-- ============================================================================\n\n` +
+         `-- ── STEP 1 : CT_MENU_PAGE_V1 ─────────────────────────────────────────────────\n` +
+         `-- (เช็คก่อน)\n` +
+         `SELECT *\nFROM CT_MENU_PAGE_V1\nWHERE MP_CONTROL = '${legacyUrl}';\n\n` +
+         `UPDATE CT_MENU_PAGE_V1\nSET MP_PROGRAM_ID   = '${programId}',\n    MP_ROUTING_PATH = '${routingPath}'\n` +
+         `WHERE MP_CONTROL    = '${legacyUrl}'\n  AND MP_ACTION     = 'inquiry'\n  AND MP_PROGRAM_ID IS NULL;\nCOMMIT;\n\n\n` +
+         `-- ── STEP 1.5 : CT_MENU_FUNC_V1 ───────────────────────────────────────────────\n` +
+         `UPDATE CT_MENU_FUNC_V1 mf\nSET mf.MF_PROGRAM_ID = (\n` +
+         `    SELECT mp.MP_PROGRAM_ID FROM CT_MENU_PAGE_V1 mp\n` +
+         `    WHERE mp.MP_CONTROL = mf.MF_CONTROL AND mp.MP_PROGRAM_ID = '${programId}')\n` +
+         `WHERE mf.MF_PROGRAM_ID IS NULL\n` +
+         `  AND EXISTS (\n` +
+         `    SELECT 1 FROM CT_MENU_PAGE_V1 mp\n` +
+         `    WHERE mp.MP_CONTROL = mf.MF_CONTROL AND mp.MP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
+         `-- ── STEP 2 : เช็ค role ที่ผูกอยู่ (ไม่ต้องแก้) ──────────────────────────────\n` +
+         `SELECT DISTINCT mr.MR_ROLE_CODE\nFROM CT_MENU_ROLE mr\n` +
+         `JOIN CT_MENU_FUNC_V1 mf ON mf.MF_FUNC_CODE = mr.MR_FUNC_CODE\n` +
+         `JOIN CT_MENU_PAGE_V1 mp ON mp.MP_CONTROL   = mf.MF_CONTROL\n` +
+         `WHERE mp.MP_PROGRAM_ID = '${programId}';\n\n\n` +
+         `-- ── STEP 3 : CT_PROGRAM_PERMISSION_V1 ────────────────────────────────────────\n` +
+         `INSERT INTO CT_PROGRAM_PERMISSION_V1\n` +
+         `  (CPP_ROLE_CODE, CPP_PROGRAM_ID, CPP_PROGRAM_NAME,\n` +
+         `   CPP_ADD_FLAG, CPP_QUERY_FLAG, CPP_UPDATE_FLAG, CPP_DELETE_FLAG,\n` +
+         `   CPP_ACCESS_TYPE, CPP_READ_ONLY, CREATE_BY, CREATE_DT)\n` +
+         `SELECT r.role, '${programId}', '${programId}${pascalName}',\n` +
+         `       'Y', 'Y', 'Y', 'Y', '', 'N', 'MIGRATE-${programId}', SYSTIMESTAMP\n` +
+         `FROM ( SELECT '${roleCode}' role FROM dual ) r\n` +
+         `WHERE NOT EXISTS (SELECT 1 FROM CT_PROGRAM_PERMISSION_V1 x\n` +
+         `                  WHERE x.CPP_ROLE_CODE = r.role AND x.CPP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
+         `-- ── STEP 4 : CT_API_PATH_PROGRAM ─────────────────────────────────────────────\n` +
+         `INSERT INTO CT_API_PATH_PROGRAM (APP_API_PATH, APP_PROGRAM_ID, APP_CREATE_BY)\n` +
+         `SELECT '/${moduleType.toLowerCase()}${routingPath}', '${programId}', 'MIGRATE-${programId}' FROM dual\n` +
+         `WHERE NOT EXISTS (SELECT 1 FROM CT_API_PATH_PROGRAM\n` +
+         `                  WHERE APP_API_PATH = '/${moduleType.toLowerCase()}${routingPath}' AND APP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
+         `-- ── VERIFY ────────────────────────────────────────────────────────────────────\n` +
+         `SELECT (SELECT COUNT(*) FROM CT_API_PATH_PROGRAM\n` +
+         `        WHERE APP_PROGRAM_ID = '${programId}')                                        AS path_rows,\n` +
+         `       (SELECT COUNT(DISTINCT CPP_ROLE_CODE) FROM CT_PROGRAM_PERMISSION_V1\n` +
+         `        WHERE CPP_PROGRAM_ID = '${programId}')                                        AS granted_roles\n` +
+         `FROM dual;\n` +
+         `-- 👉 เสร็จแล้ว restart permission-service\n`;
 }
