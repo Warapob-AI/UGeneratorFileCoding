@@ -27,6 +27,7 @@ import {
   generateFrontendFormSchema,
   generateFrontendSearchStore,
   generatePermissionSQL,
+  generateFrontendPage,
   FieldDefinition,
   ButtonsSelection,
   getDefaultLabel,
@@ -193,6 +194,7 @@ export default function GeneratorPage() {
         case 'reportComponent': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/${reportNameCamel}.tsx`, code: generateFrontendReportComponent(name, type, fields, buttons, reportFileName, reportEngine, finalHeader, genOptions) };
         case 'reportSchema': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/schemas/${reportFileName}Schema.tsx`, code: generateFrontendReportSchema(name, fields, reportFileName) };
         case 'searchStore': return { path: `FrontEnd/_providers/${type.toLowerCase()}/${camelName}Store.ts`, code: generateFrontendSearchStore(name, type) };
+        case 'routingPage': return { path: `FrontEnd/app/(private)/(${type.toLowerCase()})/${camelName}/page.tsx`, code: generateFrontendPage(name, type, frontendMode, reportFileName) };
         default: return { path: '', code: '' };
       }
     } else {
@@ -272,8 +274,26 @@ export default function GeneratorPage() {
 
           <div className={styles.formGroup}>
             <label htmlFor="selectModuleType">Module / Folder Type</label>
-            <select id="selectModuleType" value={moduleType} onChange={(e) => handleModuleTypeChange(e.target.value)}>
-              <option value="ap">ap</option><option value="as">as</option><option value="bp">bp</option><option value="cc">cc</option><option value="ci">ci</option><option value="cl">cl</option><option value="cm">cm</option><option value="co">co</option><option value="cr">cr</option><option value="ct">ct</option><option value="lt">lt</option><option value="mk">mk</option><option value="pf">pf</option><option value="ps">ps</option><option value="report">report</option>
+            <select
+              id="selectModuleType"
+              value={moduleType}
+              onChange={(e) => handleModuleTypeChange(e.target.value)}
+            >
+              <option value="ap">ap</option>
+              <option value="as">as</option>
+              <option value="bp">bp</option>
+              <option value="cc">cc</option>
+              <option value="ci">ci</option>
+              <option value="cl">cl</option>
+              <option value="cm">cm</option>
+              <option value="co">co</option>
+              <option value="cr">cr</option>
+              <option value="ct">ct</option>
+              <option value="lt">lt</option>
+              <option value="mk">mk</option>
+              <option value="pf">pf</option>
+              <option value="ps">ps</option>
+              <option value="report">report</option>
             </select>
           </div>
 
@@ -304,8 +324,14 @@ export default function GeneratorPage() {
           {frontendMode === 'report' && (
             <div className={styles.formGroup}>
               <label htmlFor="selectReportEngine">Report Engine</label>
-              <select id="selectReportEngine" value={reportEngine} onChange={(e) => setReportEngine(e.target.value as 'direct' | 'crystal' | 'jasper')}>
-                <option value="direct">Direct Excel Export</option><option value="crystal">Crystal Report</option><option value="jasper">Jasper Report</option>
+              <select
+                id="selectReportEngine"
+                value={reportEngine}
+                onChange={(e) => setReportEngine(e.target.value as 'direct' | 'crystal' | 'jasper')}
+              >
+                <option value="direct">Direct Excel Export</option>
+                <option value="crystal">Crystal Report</option>
+                <option value="jasper">Jasper Report</option>
               </select>
             </div>
           )}
@@ -369,13 +395,131 @@ export default function GeneratorPage() {
         {/* Buttons Selector Checkbox Grid */}
         <div>
           <div className={styles.sectionTitle}>Form Buttons</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', padding: '10px', background: '#ffffff', borderRadius: '8px', border: '1px solid var(--panel-border)' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={buttons.search} onChange={(e) => setButtons(prev => ({ ...prev, search: e.target.checked }))} style={{ accentColor: 'var(--accent-primary)' }} />Search</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={buttons.clear} onChange={(e) => setButtons(prev => ({ ...prev, clear: e.target.checked }))} style={{ accentColor: 'var(--accent-primary)' }} />Clear</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={buttons.save} onChange={(e) => setButtons(prev => ({ ...prev, save: e.target.checked }))} style={{ accentColor: 'var(--accent-primary)' }} />Save</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={buttons.add} onChange={(e) => setButtons(prev => ({ ...prev, add: e.target.checked }))} style={{ accentColor: 'var(--accent-primary)' }} />Add</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={buttons.close} onChange={(e) => setButtons(prev => ({ ...prev, close: e.target.checked }))} style={{ accentColor: 'var(--accent-primary)' }} />Close</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={buttons.print} onChange={(e) => setButtons(prev => ({ ...prev, print: e.target.checked }))} style={{ accentColor: 'var(--accent-primary)' }} />Print</label>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '6px',
+              padding: '10px',
+              background: '#ffffff',
+              borderRadius: '8px',
+              border: '1px solid var(--panel-border)',
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={buttons.search}
+                onChange={(e) =>
+                  setButtons((prev) => ({ ...prev, search: e.target.checked }))
+                }
+                style={{ accentColor: 'var(--accent-primary)' }}
+              />
+              Search
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={buttons.clear}
+                onChange={(e) =>
+                  setButtons((prev) => ({ ...prev, clear: e.target.checked }))
+                }
+                style={{ accentColor: 'var(--accent-primary)' }}
+              />
+              Clear
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={buttons.save}
+                onChange={(e) =>
+                  setButtons((prev) => ({ ...prev, save: e.target.checked }))
+                }
+                style={{ accentColor: 'var(--accent-primary)' }}
+              />
+              Save
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={buttons.add}
+                onChange={(e) =>
+                  setButtons((prev) => ({ ...prev, add: e.target.checked }))
+                }
+                style={{ accentColor: 'var(--accent-primary)' }}
+              />
+              Add
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={buttons.close}
+                onChange={(e) =>
+                  setButtons((prev) => ({ ...prev, close: e.target.checked }))
+                }
+                style={{ accentColor: 'var(--accent-primary)' }}
+              />
+              Close
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={buttons.print}
+                onChange={(e) =>
+                  setButtons((prev) => ({ ...prev, print: e.target.checked }))
+                }
+                style={{ accentColor: 'var(--accent-primary)' }}
+              />
+              Print
+            </label>
           </div>
         </div>
 
@@ -397,11 +541,32 @@ export default function GeneratorPage() {
                 <div key={idx} className={styles.fieldRow} style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '8px' }}>
                   <div style={{ display: 'flex', gap: '6px', width: '100%', alignItems: 'center' }}>
                     <input type="text" value={field.name} onChange={(e) => handleFieldChange(idx, 'name', e.target.value)} placeholder="Field name" title="Field Name" style={{ flex: 2 }} />
-                    <select value={field.frontendType || 'text'} onChange={(e) => handleFieldChange(idx, 'frontendType', e.target.value)} title="Frontend Type" style={{ flex: 1.3 }}>
-                      <option value="text">text</option><option value="number">number</option><option value="calendar">calendar</option><option value="checkbox">checkbox</option><option value="select">select</option><option value="radio">radio</option>
+                    <select
+                      value={field.frontendType || 'text'}
+                      onChange={(e) => handleFieldChange(idx, 'frontendType', e.target.value)}
+                      title="Frontend Type"
+                      style={{ flex: 1.3 }}
+                    >
+                      <option value="text">text</option>
+                      <option value="number">number</option>
+                      <option value="calendar">calendar</option>
+                      <option value="checkbox">checkbox</option>
+                      <option value="select">select</option>
+                      <option value="radio">radio</option>
                     </select>
-                    <select value={field.type} onChange={(e) => handleFieldChange(idx, 'type', e.target.value)} title="Backend Type" style={{ flex: 1.3 }}>
-                      <option value="String">String</option><option value="Integer">Integer</option><option value="Long">Long</option><option value="Double">Double</option><option value="BigDecimal">BigDecimal</option><option value="LocalDate">LocalDate</option><option value="Boolean">Boolean</option>
+                    <select
+                      value={field.type}
+                      onChange={(e) => handleFieldChange(idx, 'type', e.target.value)}
+                      title="Backend Type"
+                      style={{ flex: 1.3 }}
+                    >
+                      <option value="String">String</option>
+                      <option value="Integer">Integer</option>
+                      <option value="Long">Long</option>
+                      <option value="Double">Double</option>
+                      <option value="BigDecimal">BigDecimal</option>
+                      <option value="LocalDate">LocalDate</option>
+                      <option value="Boolean">Boolean</option>
                     </select>
                     <div style={{ width: '32px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                       <input type="checkbox" checked={field.isKey} onChange={(e) => handleFieldChange(idx, 'isKey', e.target.checked)} title="Is Primary Key" />
@@ -472,6 +637,7 @@ export default function GeneratorPage() {
             {useSearchStore && (
               <button className={`${styles.subTabBtn} ${activeSubTab === 'searchStore' ? styles.active : ''}`} style={{ background: '#f8fafc', color: '#475569', fontWeight: 'bold' }} onClick={() => setActiveSubTab('searchStore')}>Zustand Store</button>
             )}
+            <button className={`${styles.subTabBtn} ${activeSubTab === 'routingPage' ? styles.active : ''}`} onClick={() => setActiveSubTab('routingPage')}>Routing (page.tsx)</button>
           </div>
         )}
 

@@ -15,7 +15,6 @@ import {
   generateBackendServiceImpl,
   generateFrontendModel,
   generateFrontendService,
-  generateFrontendComponent,
   generateFrontendSearchComponent,
   generateFrontendDetailComponent,
   generateFrontendReportComponent,
@@ -23,6 +22,8 @@ import {
   generateFrontendSearchTable,
   generateFrontendReportSchema,
   generateFrontendFormSchema,
+  generateFrontendSearchStore,
+  generateFrontendPage,
   FieldDefinition,
   ButtonsSelection
 } from '@/lib/generator';
@@ -41,7 +42,13 @@ export async function POST(request: Request) {
       buttons,
       frontendMode,
       reportEngine,
-      pageHeader
+      pageHeader,
+      hasDealerSearch,
+      useSearchStore,
+      programId,
+      legacyUrl,
+      routingPath,
+      roleCode
     } = body as {
       moduleName: string;
       moduleType: string;
@@ -63,6 +70,12 @@ export async function POST(request: Request) {
       frontendMode: 'search' | 'report';
       reportEngine: 'direct' | 'crystal' | 'jasper';
       pageHeader?: string;
+      hasDealerSearch?: boolean;
+      useSearchStore?: boolean;
+      programId?: string;
+      legacyUrl?: string;
+      routingPath?: string;
+      roleCode?: string;
     };
 
     if (!moduleName || !moduleType || !fields || fields.length === 0) {
@@ -72,6 +85,7 @@ export async function POST(request: Request) {
     const pascalName = toPascalCase(moduleName);
     const camelName = toCamelCase(moduleName);
     const finalClassName = className || `Mk${pascalName}`;
+    const options = { hasDealerSearch, useSearchStore, programId, legacyUrl, routingPath, roleCode };
 
     // Resolve paths relative to next.js root (which is workspace/generator)
     const baseDir = path.resolve(process.cwd(), '..', 'New folder');
@@ -169,7 +183,7 @@ export async function POST(request: Request) {
       allFiles.push({
         key: 'frontendModel',
         path: path.join(frontendBase, '_models', moduleType.toLowerCase(), `${camelName}.model.ts`),
-        content: generateFrontendModel(moduleName, moduleType, fields, frontendMode)
+        content: generateFrontendModel(moduleName, moduleType, fields, frontendMode, options)
       });
     }
 
@@ -177,8 +191,8 @@ export async function POST(request: Request) {
     if (selectedFiles.frontendService) {
       allFiles.push({
         key: 'frontendService',
-        path: path.join(frontendBase, '_service', moduleType.toLowerCase(), `${camelName}.service.ts`),
-        content: generateFrontendService(moduleName, moduleType, fields)
+        path: path.join(frontendBase, '_service', moduleType.toLowerCase(), camelName, `${camelName}.service.ts`),
+        content: generateFrontendService(moduleName, moduleType, fields, frontendMode === 'report', options)
       });
     }
 
@@ -189,7 +203,7 @@ export async function POST(request: Request) {
         allFiles.push({
           key: 'frontendSearchComponent',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, `${camelName}.tsx`),
-          content: generateFrontendSearchComponent(moduleName, moduleType, fields, buttons, pageHeader)
+          content: generateFrontendSearchComponent(moduleName, moduleType, fields, buttons, pageHeader, options)
         });
         // 2. Search Table
         allFiles.push({
@@ -221,7 +235,7 @@ export async function POST(request: Request) {
         allFiles.push({
           key: 'frontendReportComponent',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, `${reportNameCamel}.tsx`),
-          content: generateFrontendReportComponent(moduleName, moduleType, fields, buttons, reportFileName, reportEngine, pageHeader)
+          content: generateFrontendReportComponent(moduleName, moduleType, fields, buttons, reportFileName, reportEngine, pageHeader, options)
         });
         // 2. Report Schema
         allFiles.push({
@@ -230,6 +244,22 @@ export async function POST(request: Request) {
           content: generateFrontendReportSchema(moduleName, fields, reportFileName)
         });
       }
+
+      // Next.js Route Page (page.tsx)
+      allFiles.push({
+        key: 'frontendPage',
+        path: path.join(frontendBase, 'app', '(private)', `(${moduleType.toLowerCase()})`, camelName, 'page.tsx'),
+        content: generateFrontendPage(moduleName, moduleType, frontendMode, reportFileName)
+      });
+    }
+
+    // Zustand Store (if selected)
+    if (useSearchStore && selectedFiles.frontendComponent) {
+      allFiles.push({
+        key: 'frontendSearchStore',
+        path: path.join(frontendBase, '_providers', moduleType.toLowerCase(), camelName, `${camelName}SearchStore.provider.ts`),
+        content: generateFrontendSearchStore(moduleName, moduleType)
+      });
     }
 
     if (allFiles.length === 0) {

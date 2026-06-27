@@ -256,10 +256,15 @@ export function generateFrontendModel(
     if (!finalFields.some(f => f.name === 'dealerName')) finalFields.push({ name: 'dealerName', type: 'String', columnName: 'DEALER_NAME', isKey: false, label: 'ชื่อผู้จำหน่าย' });
   }
 
+  if (frontendMode !== 'report') {
+    if (!finalFields.some(f => f.name === 'isEdit')) finalFields.push({ name: 'isEdit', type: 'Boolean', columnName: 'IS_EDIT', isKey: false, label: 'isEdit' });
+    if (!finalFields.some(f => f.name === 'isView')) finalFields.push({ name: 'isView', type: 'Boolean', columnName: 'IS_VIEW', isKey: false, label: 'isView' });
+  }
+
   const modelFieldsStr = finalFields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
   const fieldsObjectFields = finalFields.map(f => `  ${toSnakeCase(f.name)}: "${f.name}",`).join('\n');
 
-  let code = `export interface ${pascalName}Model {\n${modelFieldsStr}\n}\n\nexport const ${pascalName}ModelFields = {\n${fieldsObjectFields}\n};\n`;
+  let code = `export interface ${pascalName}Model {\n${modelFieldsStr}\n}\n\nexport const ${pascalName}ModelFields = {\n${fieldsObjectFields}\n} as const;\n`;
   if (frontendMode !== 'report') {
     const createFieldsStr = finalFields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
     const updateFieldsStr = finalFields.filter(f => !f.isKey).map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
@@ -280,22 +285,47 @@ export function generateFrontendService(
   const typeUpper = moduleType.toUpperCase();
   const typeLower = moduleType.toLowerCase();
 
-  if (isReport) {
-    let targetFields = [...fields];
-    if (options?.hasDealerSearch) {
-      if (!targetFields.some(f => f.name === 'dealerCode')) targetFields.push({ name: 'dealerCode', type: 'String', columnName: 'DEALER_CODE', isKey: false });
-      if (!targetFields.some(f => f.name === 'dealerName')) targetFields.push({ name: 'dealerName', type: 'String', columnName: 'DEALER_NAME', isKey: false });
-    }
-    const mappingParams = targetFields.map(f => f.type === 'LocalDate' ? `      ${f.name}: formatLocalDate(theModel.${f.name}),` : `      ${f.name}: theModel.${f.name},`).join('\n');
+  let targetFields = [...fields];
+  if (options?.hasDealerSearch) {
+    if (!targetFields.some(f => f.name === 'dealerCode')) targetFields.push({ name: 'dealerCode', type: 'String', columnName: 'DEALER_CODE', isKey: false });
+    if (!targetFields.some(f => f.name === 'dealerName')) targetFields.push({ name: 'dealerName', type: 'String', columnName: 'DEALER_NAME', isKey: false });
+  }
+  const mappingParams = targetFields.map(f => f.type === 'LocalDate' ? `      ${f.name}: formatLocalDate(theModel.${f.name}),` : `      ${f.name}: theModel.${f.name},`).join('\n');
 
-    return `import { Constants } from "@/_helpers/constants";\nimport { formatLocalDate } from "@/_helpers/date-helper";\nimport axiosBlob from "@/utils/axiosBlob";\n` +
-           `import { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}/${camelName}.model";\n\n` +
-           `export const ${typeUpper}_${toSnakeCase(moduleName)}_URL = \`\${Constants.URL_${typeUpper}}/${camelName}\`;\n\n` +
-           `function export${pascalName}(theModel: ${pascalName}Model) {\n  return axiosBlob.get(\`\${${typeUpper}_${toSnakeCase(moduleName)}_URL}/exportExcel\`, {\n    params: {\n${mappingParams}\n    },\n  });\n}\n\n` +
-           `export const ${camelName}Service = { export${pascalName} };\n`;
+  if (isReport) {
+    return `import { Constants } from "@/_helpers/constants";\n` +
+      `import { formatLocalDate } from "@/_helpers/date-helper";\n` +
+      `import axiosBlob from "@/utils/axiosBlob";\n` +
+      `import { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}.model";\n\n` +
+      `export const ${typeUpper}_${toSnakeCase(moduleName)}_URL = \`\${Constants.URL_${typeUpper}}/${camelName}\`;\n\n` +
+      `function export${pascalName}(theModel: ${pascalName}Model) {\n` +
+      `  return axiosBlob.get(\`\${${typeUpper}_${toSnakeCase(moduleName)}_URL}/exportExcel\`, {\n` +
+      `    params: {\n` +
+      `${mappingParams}\n` +
+      `    },\n` +
+      `  });\n` +
+      `}\n\n` +
+      `export const ${camelName}Service = {\n` +
+      `  export${pascalName},\n` +
+      `};\n`;
   }
 
-  return `import { Constants } from "@/_helpers/constants";\nimport axios from "@/utils/axiosInstance";\n\nexport const ${toSnakeCase(moduleName)}_URL = \`\${Constants.URL_${typeUpper}}/${camelName}\`;\n\nexport const ${camelName}Service = {\n  // Methods\n};\n`;
+  return `import { Constants } from "@/_helpers/constants";\n` +
+    `import { formatLocalDate } from "@/_helpers/date-helper";\n` +
+    `import axios from "@/utils/axiosInstance";\n` +
+    `import { Response } from "@/_models/base.model";\n` +
+    `import { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}.model";\n\n` +
+    `export const ${toSnakeCase(moduleName)}_URL = \`\${Constants.URL_${typeUpper}}/${camelName}\`;\n\n` +
+    `function get${pascalName}List(theModel: ${pascalName}Model) {\n` +
+    `  return axios.get<Response<${pascalName}Model[]>>(\`\${${toSnakeCase(moduleName)}_URL}/searchList\`, {\n` +
+    `    params: {\n` +
+    `${mappingParams}\n` +
+    `    },\n` +
+    `  });\n` +
+    `}\n\n` +
+    `export const ${camelName}Service = {\n` +
+    `  get${pascalName}List,\n` +
+    `};\n`;
 }
 
 function getZodSchemaField(f: FieldDefinition): string {
@@ -318,7 +348,14 @@ export function generateFrontendSearchSchema(moduleName: string, fields: FieldDe
   const pascalName = toPascalCase(moduleName);
   const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
   const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
-  return `import { ZodHelper } from "@/_helpers/zod-helper";\nimport { z } from "zod";\n\nexport const ${pascalName}SearchSchema = z.object({\n${zodFields}\n});\n\nexport const default${pascalName}SearchValues = {\n${defaults}\n};\n`;
+  return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
+    `import { z } from "zod";\n\n` +
+    `export const ${pascalName}SearchSchema = z.object({\n` +
+    `${zodFields}\n` +
+    `});\n\n` +
+    `export const default${pascalName}SearchValues = {\n` +
+    `${defaults}\n` +
+    `};\n`;
 }
 
 export function generateFrontendSearchTable(moduleName: string, moduleType: string, fields: FieldDefinition[]): string {
@@ -326,7 +363,39 @@ export function generateFrontendSearchTable(moduleName: string, moduleType: stri
   const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
   const columnsDef = fields.map(f => f.type === 'LocalDate' ? `          constructDateColumn({\n            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n            header: "${f.label || getDefaultLabel(f.name)}",\n          })` : `          {\n            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n            header: "${f.label || getDefaultLabel(f.name)}",\n          }`).join(',\n');
-  return `"use client";\nimport { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\nimport { constructDateColumn } from "@/components/layout/Form";\nimport { CustomColTool } from "@/components/layout/Table";\nimport { MRT_ColumnDef } from "material-react-table";\nimport { useMemo } from "react";\nexport const ${pascalName}TableColumns = {\n  GetColumns: (editAction: (data: ${pascalName}Model) => void, deleteAction: (data: ${pascalName}Model) => void) => {\n    return useMemo<MRT_ColumnDef<${pascalName}Model>[]>(() => [\n      { accessorKey: "id", header: "No.", Cell: ({ row }) => <div>{row.index + 1}</div>, muiTableBodyCellProps: { align: "center" }, size: 100 },\n      { accessorKey: "tool", header: "Action", Cell: ({ row }) => <CustomColTool goToEditPage={() => editAction(row.original)} goToDeletePage={() => deleteAction(row.original)} isEdit={true} isDelete={true} />, size: 150 },\n${columnsDef}\n    ], [editAction, deleteAction]);\n  }\n};\n`;
+  return `"use client";\n\n` +
+    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\n` +
+    `import { constructDateColumn } from "@/components/layout/Form";\n` +
+    `import { CustomColTool } from "@/components/layout/Table";\n` +
+    `import { MRT_ColumnDef } from "material-react-table";\n` +
+    `import { useMemo } from "react";\n\n` +
+    `export const ${pascalName}TableColumns = {\n` +
+    `  GetColumns: (editAction: (data: ${pascalName}Model) => void, viewAction: (data: ${pascalName}Model) => void) => {\n` +
+    `    return useMemo<MRT_ColumnDef<${pascalName}Model>[]>(() => [\n` +
+    `      {\n` +
+    `        accessorKey: "id",\n` +
+    `        header: "No.",\n` +
+    `        Cell: ({ row }) => <div>{row.index + 1}</div>,\n` +
+    `        muiTableBodyCellProps: { align: "center" },\n` +
+    `        size: 100\n` +
+    `      },\n` +
+    `      {\n` +
+    `        accessorKey: "tool",\n` +
+    `        header: "Action",\n` +
+    `        Cell: ({ row }) => (\n` +
+    `          <CustomColTool\n` +
+    `            goToEditPage={() => editAction(row.original)}\n` +
+    `            goToViewPage={() => viewAction(row.original)}\n` +
+    `            isEdit={row.original.isEdit}\n` +
+    `            isView={row.original.isView}\n` +
+    `          />\n` +
+    `        ),\n` +
+    `        size: 170\n` +
+    `      },\n` +
+    `${columnsDef}\n` +
+    `    ], [editAction, viewAction]);\n` +
+    `  }\n` +
+    `};\n`;
 }
 
 export function generateFrontendReportSchema(moduleName: string, fields: FieldDefinition[], reportFileName: string): string {
@@ -334,27 +403,64 @@ export function generateFrontendReportSchema(moduleName: string, fields: FieldDe
   const pascalReportName = toPascalCase(finalReportName);
   const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
   const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
-  return `import { ZodHelper } from "@/_helpers/zod-helper";\nimport { z } from "zod";\n\nexport const ${pascalReportName}Schema = z.object({\n${zodFields}\n});\n\nexport const default${pascalReportName}Values = {\n${defaults}\n};\n`;
+  return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
+    `import { z } from "zod";\n\n` +
+    `export const ${pascalReportName}Schema = z.object({\n` +
+    `${zodFields}\n` +
+    `});\n\n` +
+    `export const default${pascalReportName}Values = {\n` +
+    `${defaults}\n` +
+    `};\n`;
 }
 
 export function generateFrontendFormSchema(moduleName: string, fields: FieldDefinition[]): string {
   const pascalName = toPascalCase(moduleName);
   const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
   const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
-  return `import { ZodHelper } from "@/_helpers/zod-helper";\nimport { z } from "zod";\n\nexport const ${pascalName}FormSchema = z.object({\n${zodFields}\n});\n\nexport const default${pascalName}FormValues = {\n${defaults}\n};\n`;
+  return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
+    `import { z } from "zod";\n\n` +
+    `export const ${pascalName}FormSchema = z.object({\n` +
+    `${zodFields}\n` +
+    `});\n\n` +
+    `export const default${pascalName}FormValues = {\n` +
+    `${defaults}\n` +
+    `};\n`;
 }
 
 export function generateFrontendSearchStore(moduleName: string, moduleType: string): string {
   const pascalName = toPascalCase(moduleName);
   const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
-  return `"use client";\n\nimport { create } from "zustand";\nimport { createJSONStorage, persist } from "zustand/middleware";\nimport { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}/${camelName}.model";\nimport { default${pascalName}Values } from "@/components/hpls/${typeLower}/${camelName}/schemas/${camelName}Schema";\n\ninterface ${pascalName}SearchState {\n  searchParams: ${pascalName}Model;\n  setSearchParams: (params: ${pascalName}Model) => void;\n  clearSearchParams: () => void;\n}\nconst initial${pascalName}SearchState: ${pascalName}Model = { ...default${pascalName}Values };\nexport const use${pascalName}SearchStore = create<${pascalName}SearchState>()(\n  persist((set) => ({\n    searchParams: initial${pascalName}SearchState,\n    setSearchParams: (params) => set({ searchParams: params }),\n    clearSearchParams: () => set({ searchParams: initial${pascalName}SearchState }),\n  }), { name: "${camelName}-search-store", storage: createJSONStorage(() => localStorage) })\n);\n`;
+  return `"use client";\n\n` +
+    `import { create } from "zustand";\n` +
+    `import { createJSONStorage, persist } from "zustand/middleware";\n` +
+    `import { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}.model";\n` +
+    `import { default${pascalName}SearchValues } from "@/components/hpls/${typeLower}/${camelName}/schemas/${camelName}SearchSchema";\n\n` +
+    `interface ${pascalName}SearchState {\n` +
+    `  searchParams: ${pascalName}Model;\n` +
+    `  setSearchParams: (params: ${pascalName}Model) => void;\n` +
+    `  clearSearchParams: () => void;\n` +
+    `}\n\n` +
+    `const initial${pascalName}SearchState: ${pascalName}Model = { ...default${pascalName}SearchValues };\n\n` +
+    `export const use${pascalName}SearchStore = create<${pascalName}SearchState>()(\n` +
+    `  persist(\n` +
+    `    (set) => ({\n` +
+    `      searchParams: initial${pascalName}SearchState,\n` +
+    `      setSearchParams: (params) => set({ searchParams: params }),\n` +
+    `      clearSearchParams: () => set({ searchParams: initial${pascalName}SearchState }),\n` +
+    `    }),\n` +
+    `    {\n` +
+    `      name: "${camelName}-search-store",\n` +
+    `      storage: createJSONStorage(() => localStorage),\n` +
+    `    }\n` +
+    `  )\n` +
+    `);\n`;
 }
 
 function getFieldInputTemplate(f: FieldDefinition, pascalName: string): string {
   let label = f.label || getDefaultLabel(f.name);
   const disableSnippet = f.disable ? `,\n      disable: true` : '';
-  
+
   // 1. ตรวจสอบ UI Type จาก frontendType ที่เลือกบนหน้าจอเป็นอันดับแรก ถ้านิ่งสนิทค่อย Fallback ตาม Backend Type
   let uiType = f.frontendType || 'text';
   if (!f.frontendType) {
@@ -390,17 +496,40 @@ function getFieldInputTemplate(f: FieldDefinition, pascalName: string): string {
 
 function getDealerFieldsTemplate(pascalName: string): string {
   return `    {\n      type: 'text',\n      fieldName: ${pascalName}ModelFields.DEALER_CODE,\n      label: 'รหัส Dealer',\n      maxLength: 20,\n      onBlur: (value: string) => handleDealerBlur(value),\n      button: {\n        labelId: 'BUTTON.SEARCH',\n        type: 'button',\n        text: '',\n        showButton: true,\n        onClick: () => setDealerPopup(true),\n      } as ButtonConfig,\n    },\n` +
-         `    {\n      type: 'text',\n      fieldName: ${pascalName}ModelFields.DEALER_NAME,\n      label: ' ',\n      disable: true,\n      maxLength: 200,\n    }`;
+    `    {\n      type: 'text',\n      fieldName: ${pascalName}ModelFields.DEALER_NAME,\n      label: ' ',\n      disable: true,\n      maxLength: 200,\n    }`;
+}
+
+function buildImports(sections: { category: string; imports: string[] }[]): string {
+  return sections
+    .map(sec => {
+      const activeImports = sec.imports.filter(Boolean);
+      if (activeImports.length === 0) return '';
+      return `// ${sec.category}\n${activeImports.join('\n')}\n`;
+    })
+    .filter(Boolean)
+    .join('\n');
 }
 
 export function generateFrontendDetailComponent(moduleName: string, moduleType: string, fields: FieldDefinition[], buttons: ButtonsSelection): string {
   const pascalName = toPascalCase(moduleName);
-  return `"use client";\nimport { useForm } from "react-hook-form";\nimport { CustomDialog } from "@/components/layout/Form/CustomDialog";\nimport DynamicForm from "@/components/layout/Form/dynamic-form-builder";\nimport BoxContainer from "@/components/ui/box-container";\n\nconst ${pascalName}FormModal = ({ open, setOpen }: any) => {\n  const modalForm = useForm();\n  return (\n    <CustomDialog open={open} onOpenChange={setOpen} title="ข้อมูล" size="lg">\n      <BoxContainer variant="compact">\n        <DynamicForm inputFormControl={modalForm} formId="modalForm" fields={[]} columnsNo="1" />\n      </BoxContainer>\n    </CustomDialog>\n  );\n};\nexport default ${pascalName}FormModal;\n`;
+  return `"use client";\n\n` +
+    `import { useForm } from "react-hook-form";\n` +
+    `import { CustomDialog } from "@/components/layout/Form/CustomDialog";\n` +
+    `import DynamicForm from "@/components/layout/Form/dynamic-form-builder";\n` +
+    `import BoxContainer from "@/components/ui/box-container";\n\n` +
+    `const ${pascalName}FormModal = ({ open, setOpen }: any) => {\n` +
+    `  const modalForm = useForm();\n` +
+    `  return (\n` +
+    `    <CustomDialog open={open} onOpenChange={setOpen} title="ข้อมูล" size="lg">\n` +
+    `      <BoxContainer variant="compact">\n` +
+    `        <DynamicForm inputFormControl={modalForm} formId="modalForm" fields={[]} columnsNo="1" />\n` +
+    `      </BoxContainer>\n` +
+    `    </CustomDialog>\n` +
+    `  );\n` +
+    `};\n\n` +
+    `export default ${pascalName}FormModal;\n`;
 }
 
-// ============================================================================
-// 🔥 2. FRONTEND SEARCH VIEW COMPONENT GENERATOR (จัดทัพโครงสร้างตัวแปรและลำดับตรงเป๊ะ)
-// ============================================================================
 export function generateFrontendSearchComponent(
   moduleName: string,
   moduleType: string,
@@ -414,111 +543,351 @@ export function generateFrontendSearchComponent(
   const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
 
-  // ดึงกลุ่ม .watch ออกมาเตรียมประกาศไว้ภายนอกก่อนถึง Dynamic Fields
+  const hasBranch = fields.some(f => f.name === 'branch');
+  const dropdownFields = fields.filter(f => f.frontendType === 'select' || f.frontendType === 'radio');
+  const hasDropdowns = dropdownFields.length > 0;
+  const hasDealer = !!options?.hasDealerSearch;
+
+  // Build imports
+  const reactImports = ['useRef', 'useState', 'useEffect', 'useCallback'];
+  const reactCoreImport = `import { ${reactImports.join(', ')} } from "react";\nimport { useForm } from "react-hook-form";`;
+
+  const externalLibsImport = `import z from "zod";\nimport { zodResolver } from "@hookform/resolvers/zod";\nimport { useRouter } from "next/navigation";`;
+
+  const layoutImports = [
+    `import { CustomCard } from "@/components/layout/Form/Card";`,
+    `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";`,
+    `import BoxContainer from "@/components/ui/box-container";`,
+    `import { AlertType, ColPinTable } from "@/components/layout/Form";`
+  ];
+
+  const sharedImports = [];
+  if (hasDealer) {
+    sharedImports.push(`import CoDealerPopUp from "../shared/coDealerPopUp";`);
+  }
+
+  const servicesImports = [];
+  if (hasDealer) {
+    servicesImports.push(`import { popupCoService } from "@/_service/co/popupCo.service";`);
+  }
+  if (hasDropdowns) {
+    servicesImports.push(`import { dropdownService } from "@/_service/${typeLower}/dropdown.service";`);
+  }
+  servicesImports.push(`import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}/${camelName}.service";`);
+
+  const providersImports = [
+    `import { useLoading } from "@/_providers/loader-provider";`,
+    `import { useAlert } from "@/_providers/alert-provider";`
+  ];
+  if (options?.useSearchStore) {
+    providersImports.push(`import { use${pascalName}SearchStore } from "@/_providers/${typeLower}/${camelName}/${camelName}SearchStore.provider";`);
+  }
+
+  const helpersImports = [];
+  if (hasBranch) {
+    helpersImports.push(`import { getUser } from "@/_helpers/cookieStore";`);
+  }
+  helpersImports.push(`import { FormHelper } from "@/_helpers/form-helper";`);
+
+  const schemasImports = [
+    `import { ${pascalName}SearchSchema, default${pascalName}SearchValues } from "./schemas/${camelName}SearchSchema";`,
+    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";`,
+    `import { ${pascalName}TableColumns } from "./tables/${camelName}Table";`
+  ];
+  if (hasDealer) {
+    schemasImports.push(`import { PopupCoDealerModel } from "@/_models/co/popupCo.model";`);
+  }
+  if (hasDropdowns) {
+    schemasImports.push(`import { DropdownModel } from "@/_models";`);
+  }
+
+  const importsSection = buildImports([
+    { category: 'React core', imports: [reactCoreImport] },
+    { category: 'External libs', imports: [externalLibsImport] },
+    { category: 'Layout / UI components', imports: layoutImports },
+    { category: 'Shared / feature components', imports: sharedImports },
+    { category: 'Services', imports: servicesImports },
+    { category: 'Providers / stores', imports: providersImports },
+    { category: 'Helpers / utils', imports: helpersImports },
+    { category: 'Schemas / models', imports: schemasImports }
+  ]);
+
+  // Dynamic Form Fields & Watch lines
   const dateFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
   const watchLines = dateFields.map(f => `  const ${f.name} = searchForm.watch(${pascalName}ModelFields.${toSnakeCase(f.name)});`).join('\n');
 
   let inputsStr = fields.map(f => getFieldInputTemplate(f, pascalName)).join(',\n');
-  if (options?.hasDealerSearch) {
+  if (hasDealer) {
     inputsStr = getDealerFieldsTemplate(pascalName) + (inputsStr ? ",\n" + inputsStr : "");
   }
 
-  // ตัวเลือกโครงสร้าง Zustand Store
-  let storeImport = options?.useSearchStore ? `import { use${pascalName}SearchStore } from "@/_providers/${typeLower}/${camelName}/${camelName}SearchStore.provider";\n` : '';
-  let storeHooks = options?.useSearchStore ? 
-    `  const searchParams = use${pascalName}SearchStore((s) => s.searchParams);\n` +
-    `  const setSearchParams = use${pascalName}SearchStore((s) => s.setSearchParams);\n` +
-    `  const clearSearchParams = use${pascalName}SearchStore((s) => s.clearSearchParams);\n\n` : '';
-    
-  let storeEffect = options?.useSearchStore ? 
-    `  useEffect(() => {\n` +
-    `    if (searchParams) {\n` +
-    `      searchForm.reset({\n` +
-    `        ...searchParams,\n` +
-    `      });\n` +
-    `    }\n` +
-    `  }, [searchParams]);\n\n` : '';
-  
-  return `"use client";\n\n` +
-    `// React core\n` +
-    `import { useRef, useState, useEffect, useCallback } from "react";\n` +
-    `import { useForm } from "react-hook-form";\n\n` +
-    `// External libs\n` +
-    `import z from "zod";\n` +
-    `import { zodResolver } from "@hookform/resolvers/zod";\n\n` +
-    `// Layout / UI components\n` +
-    `import { CustomCard } from "@/components/layout/Form/Card";\n` +
-    `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";\n` +
-    `import BoxContainer from "@/components/ui/box-container";\n\n` +
-    `// Shared / feature components\n` +
-    `${options?.hasDealerSearch ? `import CoDealerPopUp from "../shared/coDealerPopUp";\n` : ''}` +
-    `\n// Services\n` +
-    `${options?.hasDealerSearch ? `import { popupCoService } from "@/_service/co/popupCo.service";\n` : ''}` +
-    `import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}/${camelName}.service";\n\n` +
-    `// Providers / stores\n` +
-    `import { useLoading } from "@/_providers/loader-provider";\n` +
-    `import { useAlert } from "@/_providers/alert-provider";\n` +
-    `${storeImport}\n` +
-    `// Helpers / utils\n` +
-    `import { FormHelper } from "@/_helpers/form-helper";\n\n` +
-    `// Schemas / models\n` +
-    `import { ${pascalName}Schema, default${pascalName}Values } from "./schemas/${camelName}Schema";\n` +
-    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}/${camelName}.model";\n` +
-    `${options?.hasDealerSearch ? `import { PopupCoDealerModel } from "@/_models/co/popupCo.model";\n` : ''}\n` +
-    `const header = "${pageHeader || `ค้นหาข้อมูล ${pascalName}`}";\n\n` +
-    `const ${pascalName} = () => {\n` +
-         (options?.hasDealerSearch ? `  const [dealerPopup, setDealerPopup] = useState<boolean>(false);\n  const [dealerData, setDealerData] = useState<PopupCoDealerModel>({});\n\n  const lastDealerCode = useRef<string>("");\n\n` : '') +
-    `  const { errorAlert } = useAlert();\n` +
-    `  const loading = useLoading((s) => s.loading);\n` +
-    `  const setLoading = useLoading((s) => s.setLoading);\n\n` +
-         storeHooks +
-    `  const searchForm = useForm<z.infer<typeof ${pascalName}Schema>>({\n` +
-    `    resolver: zodResolver(${pascalName}Schema),\n` +
-    `    defaultValues: ${options?.useSearchStore ? 'searchParams' : `default${pascalName}Values`},\n` +
+  let sectionIndex = 1;
+
+  // Section 1: State & refs
+  const stateLines = [];
+  stateLines.push(`  const [showResult, setShowResult] = useState<boolean>(false);`);
+  stateLines.push(`  const [dataTable, setDataTable] = useState<${pascalName}Model[]>([]);`);
+  if (hasDealer) {
+    stateLines.push(`  const [dealerPopup, setDealerPopup] = useState<boolean>(false);`);
+    stateLines.push(`  const lastDealerCode = useRef<string>("");`);
+  }
+  if (hasBranch) {
+    stateLines.push(`  const [userBranch, setUserBranch] = useState<string>();`);
+  }
+  const section1 = `  // === ${sectionIndex++}. State & refs ===\n${stateLines.join('\n')}\n\n`;
+
+  // Section 2: Providers / stores
+  const providerLines = [];
+  providerLines.push(`  const { openAlert, errorAlert } = useAlert();`);
+  providerLines.push(`  const loading = useLoading((s) => s.loading);`);
+  providerLines.push(`  const setLoading = useLoading((s) => s.setLoading);`);
+  providerLines.push(`  const router = useRouter();`);
+  if (options?.useSearchStore) {
+    providerLines.push(`  const searchParams = use${pascalName}SearchStore((s) => s.searchParams);`);
+    providerLines.push(`  const setSearchParams = use${pascalName}SearchStore((s) => s.setSearchParams);`);
+    providerLines.push(`  const clearSearchParams = use${pascalName}SearchStore((s) => s.clearSearchParams);`);
+  }
+  const section2 = `  // === ${sectionIndex++}. Providers/stores ===\n${providerLines.join('\n')}\n\n`;
+
+  // Section 3: Form setup
+  const section3 = `  // === ${sectionIndex++}. Form setup ===\n` +
+    `  const searchForm = useForm<z.infer<typeof ${pascalName}SearchSchema>>({\n` +
+    `    resolver: zodResolver(${pascalName}SearchSchema),\n` +
+    `    defaultValues: ${options?.useSearchStore ? 'searchParams' : `default${pascalName}SearchValues`},\n` +
     `    mode: "onChange",\n` +
-    `  });\n\n` +
-         storeEffect +
-         (options?.hasDealerSearch ? `  useEffect(() => {\n    if (dealerData?.bpCode) {\n      searchForm.setValue(${pascalName}ModelFields.DEALER_CODE, dealerData.bpCode ?? "");\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, dealerData.dealerThaiName ?? "");\n      lastDealerCode.current = dealerData.bpCode ?? "";\n    }\n  }, [dealerData]);\n\n  const handleDealerBlur = useCallback(async (value: string) => {\n    if (!value || value.trim() === "") {\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n      lastDealerCode.current = "";\n      return;\n    }\n    if (value === lastDealerCode.current) return;\n    lastDealerCode.current = value;\n    try {\n      const res = await popupCoService.getDealerByCode(value);\n      if (res.data?.status && res.data?.object) {\n        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, res.data.object.dealerThaiName ?? "");\n      } else {\n        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n      }\n    } catch (err) {\n      errorAlert(err);\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n    }\n  }, [searchForm, errorAlert]);\n\n` : '') +
+    `  });\n` +
+    (watchLines ? watchLines + `\n\n` : `\n`);
+
+  // Section 4: Dropdown state
+  let section4 = '';
+  if (hasDropdowns) {
+    const dropdownStateFields = dropdownFields.map(f => `    ${toCamelCase(f.name)}Options: [] as DropdownModel[],`).join('\n');
+    section4 = `  // === ${sectionIndex++}. Dropdown state ===\n` +
+      `  const [dropdowns, setDropdowns] = useState({\n` +
+      `${dropdownStateFields}\n` +
+      `  });\n\n`;
+  }
+
+  // Section 5: User default branch
+  let section5 = '';
+  if (hasBranch) {
+    section5 = `  // === ${sectionIndex++}. User default branch ===\n` +
+      `  const setDefaultBranch = async () => {\n` +
+      `    const userProps = await getUser();\n` +
+      `    const branchCode = userProps?.branchCode;\n` +
+      `    setUserBranch(branchCode);\n` +
+      `    if (branchCode) {\n` +
+      `      searchForm.setValue("branch", branchCode);\n` +
+      `    }\n` +
+      `  };\n\n`;
+  }
+
+  // Section 6: Effects
+  const effectLines = [];
+  if (options?.useSearchStore) {
+    effectLines.push(
+      `  useEffect(() => {\n` +
+      `    if (searchParams) {\n` +
+      `      searchForm.reset({\n` +
+      `        ...searchParams,\n` +
+      `      });\n` +
+      `    }\n` +
+      `  }, [searchParams]);`
+    );
+  }
+  if (hasBranch || hasDropdowns) {
+    const initCalls = [];
+    if (hasBranch) initCalls.push(`    setDefaultBranch();`);
+    if (hasDropdowns) initCalls.push(`    fetchDropdowns();`);
+    effectLines.push(
+      `  useEffect(() => {\n` +
+      `${initCalls.join('\n')}\n` +
+      `  }, []);`
+    );
+  }
+  const section6 = effectLines.length > 0
+    ? `  // === ${sectionIndex++}. Effects ===\n${effectLines.join('\n\n')}\n\n`
+    : '';
+
+  // Section 7: Dropdown fetching
+  let section7 = '';
+  if (hasDropdowns) {
+    const fetchPromises = dropdownFields.map(f => {
+      if (f.name === 'branch') {
+        const getBranchMethod = `get${moduleType.toUpperCase()}BranchListByUser`;
+        return `        dropdownService.${getBranchMethod}({\n          showCode: true,\n          required: false,\n        })`;
+      } else if (f.name === 'status') {
+        return `        dropdownService.get${toPascalCase(moduleName)}StatusDropdown({\n          showCode: true,\n          required: false,\n        })`;
+      } else {
+        return `        dropdownService.get${toPascalCase(f.name)}Dropdown({\n          showCode: true,\n          required: false,\n        })`;
+      }
+    }).join(',\n');
+
+    const destructuring = dropdownFields.map(f => `${toCamelCase(f.name)}List`).join(', ');
+    const setFieldsStr = dropdownFields.map(f => `        ${toCamelCase(f.name)}Options: ${toCamelCase(f.name)}List.data,`).join('\n');
+
+    section7 = `  // === ${sectionIndex++}. Dropdown fetching (parallel) ===\n` +
+      `  const fetchDropdowns = async () => {\n` +
+      `    try {\n` +
+      `      const [${destructuring}] = await Promise.all([\n` +
+      `${fetchPromises}\n` +
+      `      ]);\n` +
+      `      setDropdowns({\n` +
+      `${setFieldsStr}\n` +
+      `      });\n` +
+      `    } catch (error) {\n` +
+      `      console.error("Error fetching dropdown data:", error);\n` +
+      `    }\n` +
+      `  };\n\n`;
+  }
+
+  // Section 8: Dealer popup callback
+  let section8 = '';
+  if (hasDealer) {
+    section8 = `  // === ${sectionIndex++}. Dealer popup callback — fill dealerCode + dealerName ===\n` +
+      `  const handleDealerPopupReturn = (data: PopupCoDealerModel) => {\n` +
+      `    searchForm.setValue(${pascalName}ModelFields.DEALER_CODE, data.bpCode ?? "");\n` +
+      `    searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, data.dealerThaiName ?? "");\n` +
+      `    lastDealerCode.current = data.bpCode ?? "";\n` +
+      `  };\n\n`;
+  }
+
+  // Section 9: OnBlur handler
+  let section9 = '';
+  if (hasDealer) {
+    section9 = `  // === ${sectionIndex++}. OnBlur handler — lookup dealer name by code ===\n` +
+      `  const handleDealerBlur = useCallback(async (value: string) => {\n` +
+      `    if (!value || value.trim() === "") {\n` +
+      `      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n` +
+      `      lastDealerCode.current = "";\n` +
+      `      return;\n` +
+      `    }\n` +
+      `    if (value === lastDealerCode.current) return;\n` +
+      `    lastDealerCode.current = value;\n` +
+      `    try {\n` +
+      `      const res = await popupCoService.getDealerByCode(value);\n` +
+      `      if (res.data?.status && res.data?.object) {\n` +
+      `        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, res.data.object.dealerThaiName ?? "");\n` +
+      `      } else {\n` +
+      `        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n` +
+      `      }\n` +
+      `    } catch (err) {\n` +
+      `      errorAlert(err);\n` +
+      `      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n` +
+      `    }\n` +
+      `  }, [searchForm, errorAlert]);\n\n`;
+  }
+
+  // Section 10: Search handler & Navigation handlers
+  let storeSaveAction = options?.useSearchStore ? `    setSearchParams(searchValues);\n` : '';
+  const section10 = `  // === ${sectionIndex++}. Navigation & Action handlers ===\n` +
+    `  const handleEditAction = (data: ${pascalName}Model) => {\n` +
+    `    // TODO: Implement edit page navigation (e.g. using path config)\n` +
+    `    console.log("Edit Action", data);\n` +
+    `  };\n\n` +
+    `  const handleViewAction = (data: ${pascalName}Model) => {\n` +
+    `    // TODO: Implement view page navigation\n` +
+    `    console.log("View Action", data);\n` +
+    `  };\n\n` +
+    `  // === ${sectionIndex++}. Search handler ===\n` +
+    `  const onSearch = (): void => {\n` +
+    `    if (loading) return;\n` +
+    `    setLoading(true);\n` +
+    `    fetchDataTable();\n` +
+    `  };\n\n` +
+    `  const fetchDataTable = async () => {\n` +
+    `    const searchValues = searchForm.getValues();\n` +
+    `    ${storeSaveAction}` +
+    `    try {\n` +
+    `      const res = await ${camelName}Service.get${pascalName}List(FormHelper.normalizeSearchParams(searchValues) as ${pascalName}Model);\n` +
+    `      if (res.data?.status && res.data?.object) {\n` +
+    `        setDataTable(res.data.object);\n` +
+    `        setShowResult(true);\n` +
+    `      } else {\n` +
+    `        openAlert(res.data.messageLocal || "ไม่พบข้อมูลที่ค้นหา", AlertType.WARNING);\n` +
+    `        setDataTable([]);\n` +
+    `      }\n` +
+    `    } catch (err) {\n` +
+    `      errorAlert(err);\n` +
+    `    } finally {\n` +
+    `      setLoading(false);\n` +
+    `    }\n` +
+    `  };\n\n`;
+
+  // Section 11: Clear handler
+  const branchResetInsideClear = hasBranch
+    ? `    if (userBranch) {\n      searchForm.setValue("branch", userBranch);\n    }\n`
+    : '';
+  const section11 = `  // === ${sectionIndex++}. Clear handler ===\n` +
     `  const onClear = () => {\n` +
     `    ${options?.useSearchStore ? 'clearSearchParams();\n' : ''}` +
-    `    searchForm.reset(default${pascalName}Values);\n` +
-    `${options?.hasDealerSearch ? '    lastDealerCode.current = "";\n' : ''}` +
-    `  };\n\n` +
-         (watchLines ? watchLines + `\n\n` : '') +
+    `    searchForm.reset(default${pascalName}SearchValues);\n` +
+    `${branchResetInsideClear}` +
+    `${hasDealer ? '    lastDealerCode.current = "";\n' : ''}` +
+    `    setShowResult(false);\n` +
+    `    setDataTable([]);\n` +
+    `  };\n\n`;
+
+  // Section 12: Form fields
+  const section12 = `  // === ${sectionIndex++}. Form fields ===\n` +
+    `  const tableColumns = ${pascalName}TableColumns.GetColumns(handleEditAction, handleViewAction);\n\n` +
     `  const dynamicForm: DynamicField[] = [\n` +
     `${inputsStr}\n` +
     `  ];\n\n` +
     `  const formButtons: ButtonConfig[] = [\n` +
     `    { labelId: "BUTTON.SEARCH", type: "submit", showButton: true },\n` +
     `    { labelId: "BUTTON.CLEAR", type: "button", showButton: true, onClick: onClear }\n` +
-    `  ];\n\n` +
+    `  ];\n\n`;
+
+  // Section 13: Render
+  const section13 = `  // === ${sectionIndex++}. Render ===\n` +
     `  return (\n` +
     `    <div className="bg-muted flex flex-col w-full h-full">\n` +
     `      <div className="flex flex-row w-full p-6 pb-0 md:p-10 md:pb-0">\n` +
-    `        <CustomCard header={header} className="w-full h-fit">\n` +
+    `        <CustomCard header={HEADER} className="w-full h-fit">\n` +
     `          <BoxContainer>\n` +
     `            <DynamicForm\n` +
     `              inputFormControl={searchForm}\n` +
     `              formId="searchForm"\n` +
     `              fields={dynamicForm}\n` +
     `              buttons={formButtons}\n` +
-    `              onSubmit={() => {}}\n` +
+    `              onSubmit={onSearch}\n` +
     `              columnsNo="2"\n` +
     `              buttonColumnsNo="2"\n` +
     `            />\n` +
     `          </BoxContainer>\n` +
+    `          {showResult && (\n` +
+    `            <div className="grid auto-rows-min gap-4 mt-6">\n` +
+    `              <ColPinTable title="รายการข้อมูล" data={dataTable} columns={tableColumns} />\n` +
+    `            </div>\n` +
+    `          )}\n` +
     `        </CustomCard>\n` +
     `      </div>\n` +
-    `${options?.hasDealerSearch ? `      <CoDealerPopUp popup={dealerPopup} setPopup={setDealerPopup} setReturnData={setDealerData} />\n` : ''}` +
+    `${hasDealer ? `      <CoDealerPopUp popup={dealerPopup} setPopup={setDealerPopup} setReturnData={handleDealerPopupReturn} />\n` : ''}` +
     `    </div>\n` +
-    `  );\n` +
+    `  );\n`;
+
+  return `"use client";\n\n` +
+    `${importsSection}\n` +
+    `const HEADER = "${pageHeader || `ค้นหาข้อมูล ${pascalName}`}";\n\n` +
+    `const ${pascalName} = () => {\n` +
+    section1 +
+    section2 +
+    section3 +
+    section4 +
+    section5 +
+    section6 +
+    section7 +
+    section8 +
+    section9 +
+    section10 +
+    section11 +
+    section12 +
+    section13 +
     `};\n\n` +
     `export default ${pascalName};\n`;
 }
 
-// ============================================================================
-// 🔥 4. FRONTEND REPORT VIEW COMPONENT GENERATOR (สถาปัตยกรรมระดับสูงสุดตรงตามต้นฉบับ)
-// ============================================================================
 export function generateFrontendReportComponent(
   moduleName: string,
   moduleType: string,
@@ -533,160 +902,441 @@ export function generateFrontendReportComponent(
   const pascalName = toPascalCase(moduleName);
   const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
+  const typeUpper = moduleType.toUpperCase();
 
-  // ดึงกลุ่ม .watch ออกมาเตรียมประกาศไว้ด้านบน
+  const finalReportName = reportFileName || (toCamelCase(moduleName) + 'Report');
+  const pascalReportName = toPascalCase(finalReportName);
+  const camelReportName = toCamelCase(finalReportName);
+
+  const hasBranch = fields.some(f => f.name === 'branch');
+  const dropdownFields = fields.filter(f => f.frontendType === 'select' || f.frontendType === 'radio');
+  const hasDropdowns = dropdownFields.length > 0;
+  const hasDealer = !!options?.hasDealerSearch;
+  const isCrystal = reportEngine === 'crystal';
+  const isJasper = reportEngine === 'jasper';
+
+  // Build imports
+  const reactImports = ['useRef', 'useState', 'useEffect', 'useCallback'];
+  const reactCoreImport = `import { ${reactImports.join(', ')} } from "react";\nimport { useForm } from "react-hook-form";`;
+
+  const externalLibsImport = [
+    `import z from "zod";`,
+    `import { zodResolver } from "@hookform/resolvers/zod";`
+  ];
+  if (isCrystal || isJasper) {
+    externalLibsImport.push(`import dayjs from "dayjs";`);
+  }
+  const externalLibsImportStr = externalLibsImport.join('\n');
+
+  const layoutImports = [
+    `import { CustomCard } from "@/components/layout/Form/Card";`,
+    `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";`,
+    `import BoxContainer from "@/components/ui/box-container";`
+  ];
+  if (isCrystal) {
+    layoutImports.push(`import CrystalReportModal from "@/components/hpls/report/shared/crystalReportModal";`);
+  } else if (isJasper) {
+    layoutImports.push(`import JasperReportModal from "@/components/hpls/report/shared/jasperReportModal";`);
+  }
+
+  const sharedImports = [];
+  if (hasDealer) {
+    sharedImports.push(`import CoDealerPopUp from "../shared/coDealerPopUp";`);
+  }
+
+  const servicesImports = [];
+  if (hasDealer) {
+    servicesImports.push(`import { popupCoService } from "@/_service/co/popupCo.service";`);
+  }
+  if (hasDropdowns) {
+    servicesImports.push(`import { dropdownService } from "@/_service/${typeLower}/dropdown.service";`);
+  }
+  if (reportEngine === 'direct') {
+    servicesImports.push(`import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}/${camelName}.service";`);
+  }
+
+  const providersImports = [];
+  if (reportEngine === 'direct') {
+    providersImports.push(`import { useLoading } from "@/_providers/loader-provider";`);
+  }
+  providersImports.push(`import { useAlert } from "@/_providers/alert-provider";`);
+  if (options?.useSearchStore) {
+    providersImports.push(`import { use${pascalName}SearchStore } from "@/_providers/${typeLower}/${camelName}/${camelName}SearchStore.provider";`);
+  }
+
+  const helpersImports = [];
+  if (hasBranch) {
+    helpersImports.push(`import { getUser } from "@/_helpers/cookieStore";`);
+  }
+  if (reportEngine === 'direct') {
+    helpersImports.push(`import { FormHelper } from "@/_helpers/form-helper";`);
+    helpersImports.push(`import { downloadBlob, resolveReportFileName } from "@/_helpers/crystal-report-helper";`);
+  }
+
+  const schemasImports = [
+    `import { ${pascalReportName}Schema, default${pascalReportName}Values } from "./schemas/${reportFileName}Schema";`,
+    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";`
+  ];
+  if (hasDealer) {
+    schemasImports.push(`import { PopupCoDealerModel } from "@/_models/co/popupCo.model";`);
+  }
+  if (hasDropdowns) {
+    schemasImports.push(`import { DropdownModel } from "@/_models";`);
+  }
+
+  const importsSection = buildImports([
+    { category: 'React core', imports: [reactCoreImport] },
+    { category: 'External libs', imports: [externalLibsImportStr] },
+    { category: 'Layout / UI components', imports: layoutImports },
+    { category: 'Shared / feature components', imports: sharedImports },
+    { category: 'Services', imports: servicesImports },
+    { category: 'Providers / stores', imports: providersImports },
+    { category: 'Helpers / utils', imports: helpersImports },
+    { category: 'Schemas / models', imports: schemasImports }
+  ]);
+
+  // Dynamic Form Fields & Watch lines
   const dateFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
   const watchLines = dateFields.map(f => `  const ${f.name} = searchForm.watch(${pascalName}ModelFields.${toSnakeCase(f.name)});`).join('\n');
 
-  // จัดเตรียมฟิลด์อินพุต
   let inputsStr = fields.map(f => getFieldInputTemplate(f, pascalName)).join(',\n');
-  if (options?.hasDealerSearch) {
+  if (hasDealer) {
     inputsStr = getDealerFieldsTemplate(pascalName) + (inputsStr ? ",\n" + inputsStr : "");
   }
 
-  const reportDisplayTitle = toPascalCase(reportFileName || (moduleName + 'Report')).replace(/([a-z])([A-Z])/g, '$1 $2');
+  let sectionIndex = 1;
 
-  // ข้อมูล Zustand Store ที่สอดคล้องตามตัวเลือกจริง
-  let storeImport = options?.useSearchStore ? `import { use${pascalName}SearchStore } from "@/_providers/${typeLower}/${camelName}/${camelName}SearchStore.provider";\n` : '';
-  let storeHooks = options?.useSearchStore ? 
-    `  const searchParams = use${pascalName}SearchStore((s) => s.searchParams);\n` +
-    `  const setSearchParams = use${pascalName}SearchStore((s) => s.setSearchParams);\n` +
-    `  const clearSearchParams = use${pascalName}SearchStore((s) => s.clearSearchParams);\n\n` : '';
-    
-// ดึงฟิลด์ที่เป็น LocalDate ทั้งหมดที่มีในหน้าจอมาสร้างบรรทัดแปลง Date object แบบไดนามิก
-  const localDateFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
-  const storeEffectFieldsStr = localDateFields.map(f => {
-    const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
-    return `        [${fieldVar}]: searchParams[${fieldVar}] ? new Date(searchParams[${fieldVar}]) : undefined,`;
-  }).join('\n');
+  // Component Sections
+  // Section 1: State & refs
+  const stateLines = [];
+  if (hasDealer) {
+    stateLines.push(`  const [dealerPopup, setDealerPopup] = useState<boolean>(false);`);
+    stateLines.push(`  const lastDealerCode = useRef<string>("");`);
+  }
+  if (hasBranch) {
+    stateLines.push(`  const [userBranch, setUserBranch] = useState<string>();`);
+  }
+  if (isCrystal || isJasper) {
+    stateLines.push(`  const [reportOpen, setReportOpen] = useState<boolean>(false);`);
+    stateLines.push(`  const [reportBaseParams, setReportBaseParams] = useState<unknown[]>([]);`);
+  }
+  const section1 = stateLines.length > 0
+    ? `  // === ${sectionIndex++}. State & refs ===\n${stateLines.join('\n')}\n\n`
+    : '';
 
-// 1. สร้างส่วนประกาศตัวแปรก่อนเข้าฟังก์ชัน reset
-  const watchFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
-  const dateConstDeclarations = watchFields.map(f => {
-    const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
-    return `      const raw_${f.name} = searchParams[${fieldVar}];`;
-  }).join('\n');
+  // Section 2: Providers / stores
+  const providerLines = [];
+  providerLines.push(`  const { errorAlert } = useAlert();`);
+  if (reportEngine === 'direct') {
+    providerLines.push(`  const loading = useLoading((s) => s.loading);`);
+    providerLines.push(`  const setLoading = useLoading((s) => s.setLoading);`);
+  }
+  if (options?.useSearchStore) {
+    providerLines.push(`  const searchParams = use${pascalName}SearchStore((s) => s.searchParams);`);
+    providerLines.push(`  const setSearchParams = use${pascalName}SearchStore((s) => s.setSearchParams);`);
+    providerLines.push(`  const clearSearchParams = use${pascalName}SearchStore((s) => s.clearSearchParams);`);
+  }
+  const section2 = providerLines.length > 0
+    ? `  // === ${sectionIndex++}. Providers/stores ===\n${providerLines.join('\n')}\n\n`
+    : '';
 
-  // 2. สร้างบรรทัด map ค่าลงใน reset object
-  const dateResetMappings = watchFields.map(f => {
-    const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
-    return `        [${fieldVar}]: raw_${f.name} ? new Date(raw_${f.name}) : undefined,`;
-  }).join('\n');
-
-  // 3. ประกอบเป็น useEffect เทมเพลต
-  let storeEffect = options?.useSearchStore ? 
-    `  useEffect(() => {\n` +
-    `    if (searchParams) {\n` +
-    `${dateConstDeclarations}\n\n` +
-    `      searchForm.reset({\n` +
-    `        ...searchParams,\n` +
-    `${dateResetMappings}\n` +
-    `      });\n` +
-    `    }\n` +
-    `  }, [searchParams]);\n\n` : '';
-  let storeSaveAction = options?.useSearchStore ? `    setSearchParams(searchForm.getValues());\n\n` : '';
-  let storeClearAction = options?.useSearchStore ? `clearSearchParams();\n` : '';
-
-  return `"use client";\n\n` +
-    `// React core\n` +
-    `import { useRef, useState, useEffect, useCallback } from "react";\n` +
-    `import { useForm } from "react-hook-form";\n\n` +
-    `// External libs\n` +
-    `import z from "zod";\n` +
-    `import { zodResolver } from "@hookform/resolvers/zod";\n\n` +
-    `// Layout / UI components\n` +
-    `import { CustomCard } from "@/components/layout/Form/Card";\n` +
-    `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";\n` +
-    `import BoxContainer from "@/components/ui/box-container";\n\n` +
-    `// Shared / feature components\n` +
-    `${options?.hasDealerSearch ? `import CoDealerPopUp from "../shared/coDealerPopUp";\n` : ''}` +
-    `\n// Services\n` +
-    `${options?.hasDealerSearch ? `import { popupCoService } from "@/_service/co/popupCo.service";\n` : ''}` +
-    `import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}/${camelName}.service";\n\n` +
-    `// Providers / stores\n` +
-    `import { useLoading } from "@/_providers/loader-provider";\n` +
-    `import { useAlert } from "@/_providers/alert-provider";\n` +
-    `${storeImport}\n` +
-    `// Helpers / utils\n` +
-    `import { FormHelper } from "@/_helpers/form-helper";\n` +
-    `import { downloadBlob, resolveReportFileName } from "@/_helpers/crystal-report-helper";\n\n` +
-    `// Schemas / models\n` +
-    `import { ${pascalName}Schema, default${pascalName}Values } from "./schemas/${camelName}Schema";\n` +
-    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}/${camelName}.model";\n` +
-    `${options?.hasDealerSearch ? `import { PopupCoDealerModel } from "@/_models/co/popupCo.model";\n` : ''}\n` +
-    `const header = "${pageHeader || `รายงานข้อมูล ${pascalName}`}";\n\n` +
-    `const ${pascalName} = () => {\n` +
-         (options?.hasDealerSearch ? `  const [dealerPopup, setDealerPopup] = useState<boolean>(false);\n  const [dealerData, setDealerData] = useState<PopupCoDealerModel>({});\n\n  const lastDealerCode = useRef<string>("");\n\n` : '') +
-    `  const { errorAlert } = useAlert();\n` +
-    `  const loading = useLoading((s) => s.loading);\n` +
-    `  const setLoading = useLoading((s) => s.setLoading);\n\n` +
-         storeHooks +
-    `  const searchForm = useForm<z.infer<typeof ${pascalName}Schema>>({\n` +
-    `    resolver: zodResolver(${pascalName}Schema),\n` +
-    `    defaultValues: ${options?.useSearchStore ? 'searchParams' : `default${pascalName}Values`},\n` +
+  // Section 3: Form setup
+  const section3 = `  // === ${sectionIndex++}. Form setup ===\n` +
+    `  const searchForm = useForm<z.infer<typeof ${pascalReportName}Schema>>({\n` +
+    `    resolver: zodResolver(${pascalReportName}Schema),\n` +
+    `    defaultValues: ${options?.useSearchStore ? 'searchParams' : `default${pascalReportName}Values`},\n` +
     `    mode: "onChange",\n` +
-    `  });\n\n` +
-         storeEffect +
-         (options?.hasDealerSearch ? `  useEffect(() => {\n    if (dealerData?.bpCode) {\n      searchForm.setValue(${pascalName}ModelFields.DEALER_CODE, dealerData.bpCode ?? "");\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, dealerData.dealerThaiName ?? "");\n      lastDealerCode.current = dealerData.bpCode ?? "";\n    }\n  }, [dealerData]);\n\n  const handleDealerBlur = useCallback(async (value: string) => {\n    if (!value || value.trim() === "") {\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n      lastDealerCode.current = "";\n      return;\n    }\n    if (value === lastDealerCode.current) return;\n    lastDealerCode.current = value;\n    try {\n      const res = await popupCoService.getDealerByCode(value);\n      if (res.data?.status && res.data?.object) {\n        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, res.data.object.dealerThaiName ?? "");\n      } else {\n        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n      }\n    } catch (err) {\n      errorAlert(err);\n      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n    }\n  }, [searchForm, errorAlert]);\n\n` : '') +
+    `  });\n` +
+    (watchLines ? watchLines + `\n\n` : `\n`);
+
+  // Section 4: Dropdown state
+  let section4 = '';
+  if (hasDropdowns) {
+    const dropdownStateFields = dropdownFields.map(f => `    ${toCamelCase(f.name)}Options: [] as DropdownModel[],`).join('\n');
+    section4 = `  // === ${sectionIndex++}. Dropdown state ===\n` +
+      `  const [dropdowns, setDropdowns] = useState({\n` +
+      `${dropdownStateFields}\n` +
+      `  });\n\n`;
+  }
+
+  // Section 5: User default branch
+  let section5 = '';
+  if (hasBranch) {
+    section5 = `  // === ${sectionIndex++}. User default branch ===\n` +
+      `  const setDefaultBranch = async () => {\n` +
+      `    const userProps = await getUser();\n` +
+      `    const branchCode = userProps?.branchCode;\n` +
+      `    setUserBranch(branchCode);\n` +
+      `    if (branchCode) {\n` +
+      `      searchForm.setValue("branch", branchCode);\n` +
+      `    }\n` +
+      `  };\n\n`;
+  }
+
+  // Section 6: Effects
+  const effectLines = [];
+  if (options?.useSearchStore) {
+    const dateConstDeclarations = dateFields.map(f => {
+      const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
+      return `      const raw_${f.name} = searchParams[${fieldVar}];`;
+    }).join('\n');
+
+    const dateResetMappings = dateFields.map(f => {
+      const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
+      return `        [${fieldVar}]: raw_${f.name} ? new Date(raw_${f.name}) : undefined,`;
+    }).join('\n');
+
+    effectLines.push(
+      `  useEffect(() => {\n` +
+      `    if (searchParams) {\n` +
+      `${dateConstDeclarations ? dateConstDeclarations + '\n\n' : ''}` +
+      `      searchForm.reset({\n` +
+      `        ...searchParams,\n` +
+      `${dateResetMappings ? dateResetMappings + '\n' : ''}` +
+      `      });\n` +
+      `    }\n` +
+      `  }, [searchParams]);`
+    );
+  }
+  if (hasBranch || hasDropdowns) {
+    const initCalls = [];
+    if (hasBranch) initCalls.push(`    setDefaultBranch();`);
+    if (hasDropdowns) initCalls.push(`    fetchDropdowns();`);
+    effectLines.push(
+      `  useEffect(() => {\n` +
+      `${initCalls.join('\n')}\n` +
+      `  }, []);`
+    );
+  }
+  const section6 = effectLines.length > 0
+    ? `  // === ${sectionIndex++}. Effects ===\n${effectLines.join('\n\n')}\n\n`
+    : '';
+
+  // Section 7: Dropdown fetching
+  let section7 = '';
+  if (hasDropdowns) {
+    const fetchPromises = dropdownFields.map(f => {
+      if (f.name === 'branch') {
+        const getBranchMethod = `get${moduleType.toUpperCase()}BranchListByUser`;
+        return `        dropdownService.${getBranchMethod}({\n          showCode: true,\n          required: false,\n        })`;
+      } else if (f.name === 'status') {
+        return `        dropdownService.get${toPascalCase(moduleName)}StatusDropdown({\n          showCode: true,\n          required: false,\n        })`;
+      } else {
+        return `        dropdownService.get${toPascalCase(f.name)}Dropdown({\n          showCode: true,\n          required: false,\n        })`;
+      }
+    }).join(',\n');
+
+    const destructuring = dropdownFields.map(f => `${toCamelCase(f.name)}List`).join(', ');
+    const setFieldsStr = dropdownFields.map(f => `        ${toCamelCase(f.name)}Options: ${toCamelCase(f.name)}List.data,`).join('\n');
+
+    section7 = `  // === ${sectionIndex++}. Dropdown fetching (parallel) ===\n` +
+      `  const fetchDropdowns = async () => {\n` +
+      `    try {\n` +
+      `      const [${destructuring}] = await Promise.all([\n` +
+      `${fetchPromises}\n` +
+      `      ]);\n` +
+      `      setDropdowns({\n` +
+      `${setFieldsStr}\n` +
+      `      });\n` +
+      `    } catch (error) {\n` +
+      `      console.error("Error fetching dropdown data:", error);\n` +
+      `    }\n` +
+      `  };\n\n`;
+  }
+
+  // Section 8: Dealer popup callback
+  let section8 = '';
+  if (hasDealer) {
+    section8 = `  // === ${sectionIndex++}. Dealer popup callback — fill dealerCode + dealerName ===\n` +
+      `  const handleDealerPopupReturn = (data: PopupCoDealerModel) => {\n` +
+      `    searchForm.setValue(${pascalName}ModelFields.DEALER_CODE, data.bpCode ?? "");\n` +
+      `    searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, data.dealerThaiName ?? "");\n` +
+      `    lastDealerCode.current = data.bpCode ?? "";\n` +
+      `  };\n\n`;
+  }
+
+  // Section 9: OnBlur handler
+  let section9 = '';
+  if (hasDealer) {
+    section9 = `  // === ${sectionIndex++}. OnBlur handler — lookup dealer name by code ===\n` +
+      `  const handleDealerBlur = useCallback(async (value: string) => {\n` +
+      `    if (!value || value.trim() === "") {\n` +
+      `      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n` +
+      `      lastDealerCode.current = "";\n` +
+      `      return;\n` +
+      `    }\n` +
+      `    if (value === lastDealerCode.current) return;\n` +
+      `    lastDealerCode.current = value;\n` +
+      `    try {\n` +
+      `      const res = await popupCoService.getDealerByCode(value);\n` +
+      `      if (res.data?.status && res.data?.object) {\n` +
+      `        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, res.data.object.dealerThaiName ?? "");\n` +
+      `      } else {\n` +
+      `        searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n` +
+      `      }\n` +
+      `    } catch (err) {\n` +
+      `      errorAlert(err);\n` +
+      `      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n` +
+      `    }\n` +
+      `  }, [searchForm, errorAlert]);\n\n`;
+  }
+
+  // Section 10: Print/Export handler
+  let section10 = '';
+  if (isCrystal || isJasper) {
+    const paramMappings = fields.map(f => {
+      if (f.type === 'LocalDate' || f.frontendType === 'calendar') {
+        return `      v.${f.name} ? dayjs(v.${f.name}).format("DD/MM/YYYY") : ""`;
+      } else {
+        return `      v.${f.name} || "default"`;
+      }
+    }).join(',\n');
+
+    section10 = `  // === ${sectionIndex++}. Print handler ===\n` +
+      `  const onPrint = () => {\n` +
+      `    const v = searchForm.getValues();\n` +
+      `    setReportBaseParams([\n` +
+      `${paramMappings}\n` +
+      `    ]);\n` +
+      `    setReportOpen(true);\n` +
+      `  };\n\n`;
+  } else {
+    // direct Excel Export
+    let storeSaveAction = options?.useSearchStore ? `    setSearchParams(searchForm.getValues());\n\n` : '';
+    const reportDisplayTitle = toPascalCase(reportFileName || (moduleName + 'Report')).replace(/([a-z])([A-Z])/g, '$1 $2');
+    section10 = `  // === ${sectionIndex++}. Export/Print handler ===\n` +
+      `  const onExport = async (rawValues: z.infer<typeof ${pascalReportName}Schema>) => {\n` +
+      `    if (loading) {\n` +
+      `      return;\n` +
+      `    }\n\n` +
+      `${storeSaveAction}` +
+      `    const values = FormHelper.normalizeSearchParams(rawValues) as ${pascalName}Model;\n\n` +
+      `    setLoading(true);\n` +
+      `    try {\n` +
+      `      const res = await ${camelName}Service.export${pascalName}(values);\n\n` +
+      `      if (!res.data || res.data.size === 0) {\n` +
+      `        errorAlert("ไม่พบข้อมูลที่ค้นหา");\n` +
+      `        setLoading(false);\n` +
+      `        return;\n` +
+      `      }\n\n` +
+      `      const fileName = resolveReportFileName('${reportDisplayTitle}', 'xlsx', res.headers?.["content-disposition"]);\n` +
+      `      const blob = new Blob([res.data], { type: "application/octet-stream" });\n` +
+      `      downloadBlob(blob, fileName);\n` +
+      `    } catch (err) {\n` +
+      `      errorAlert(err);\n` +
+      `    } finally {\n` +
+      `      setLoading(false);\n` +
+      `    }\n` +
+      `  };\n\n`;
+  }
+
+  // Section 11: Clear handler
+  const branchResetInsideClear = hasBranch
+    ? `    if (userBranch) {\n      searchForm.setValue("branch", userBranch);\n    }\n`
+    : '';
+  const section11 = `  // === ${sectionIndex++}. Clear handler ===\n` +
     `  const onClear = () => {\n` +
-    `    ${storeClearAction}` +
-    `    searchForm.reset(default${pascalName}Values);\n` +
-    `${options?.hasDealerSearch ? '    lastDealerCode.current = "";\n' : ''}` +
-    `  };\n\n` +
-         (watchLines ? watchLines + `\n\n` : '') +
+    `    ${options?.useSearchStore ? 'clearSearchParams();\n' : ''}` +
+    `    searchForm.reset(default${pascalReportName}Values);\n` +
+    `${branchResetInsideClear}` +
+    `${hasDealer ? '    lastDealerCode.current = "";\n' : ''}` +
+    `  };\n\n`;
+
+  // Section 12: Form fields
+  const submitHandlerName = (isCrystal || isJasper) ? 'onPrint' : 'onExport';
+  const section12 = `  // === ${sectionIndex++}. Form fields ===\n` +
     `  const dynamicForm: DynamicField[] = [\n` +
     `${inputsStr}\n` +
     `  ];\n\n` +
     `  const formButtons: ButtonConfig[] = [\n` +
     `    { labelId: "BUTTON.PRINT", type: "submit", showButton: true },\n` +
     `    { labelId: "BUTTON.CLEAR", type: "button", showButton: true, onClick: onClear }\n` +
-    `  ];\n\n` +
-    `  const onExport = async (rawValues: z.infer<typeof ${pascalName}Schema>) => {\n` +
-    `    if (loading) {\n` +
-    `      return;\n` +
-    `    }\n\n` +
-         storeSaveAction +
-    `    const values = FormHelper.normalizeSearchParams(rawValues) as ${pascalName}Model;\n\n` +
-    `    setLoading(true);\n` +
-    `    try {\n` +
-    `      const res = await ${camelName}Service.export${pascalName}(values);\n\n` +
-    `      if (!res.data || res.data.size === 0) {\n` +
-    `        errorAlert("ไม่พบข้อมูลที่ค้นหา");\n` +
-    `        setLoading(false);\n` +
-    `        return;\n` +
-    `      }\n\n` +
-    `      const fileName = resolveReportFileName('${reportDisplayTitle}', 'xlsx', res.headers?.["content-disposition"]);\n` +
-    `      const blob = new Blob([res.data], { type: "application/octet-stream" });\n` +
-    `      downloadBlob(blob, fileName);\n` +
-    `    } catch (err) {\n` +
-    `      errorAlert(err);\n` +
-    `    } finally {\n` +
-    `      setLoading(false);\n` +
-    `    }\n` +
-    `  };\n\n` +
+    `  ];\n\n`;
+
+  // Section 13: Render
+  let modalRenderStr = '';
+  if (isCrystal) {
+    modalRenderStr = `      <CrystalReportModal\n` +
+      `        open={reportOpen}\n` +
+      `        onOpenChange={setReportOpen}\n` +
+      `        reportName="${reportFileName || '08CO-RU01'}"\n` +
+      `        baseParams={reportBaseParams}\n` +
+      `        title="${pageHeader || `รายงานข้อมูล ${pascalName}`}"\n` +
+      `      />\n`;
+  } else if (isJasper) {
+    modalRenderStr = `      <JasperReportModal\n` +
+      `        open={reportOpen}\n` +
+      `        onOpenChange={setReportOpen}\n` +
+      `        reportName="${reportFileName || '08CO-RU01'}"\n` +
+      `        baseParams={reportBaseParams}\n` +
+      `        title="${pageHeader || `รายงานข้อมูล ${pascalName}`}"\n` +
+      `      />\n`;
+  }
+
+  const section13 = `  // === ${sectionIndex++}. Render ===\n` +
     `  return (\n` +
     `    <div className="bg-muted flex flex-col w-full h-full">\n` +
     `      <div className="flex flex-row w-full p-6 pb-0 md:p-10 md:pb-0">\n` +
-    `        <CustomCard header={header} className="w-full h-fit">\n` +
+    `        <CustomCard header={HEADER} className="w-full h-fit">\n` +
     `          <BoxContainer>\n` +
     `            <DynamicForm\n` +
     `              inputFormControl={searchForm}\n` +
     `              formId="searchForm"\n` +
     `              fields={dynamicForm}\n` +
     `              buttons={formButtons}\n` +
-    `              onSubmit={onExport}\n` +
+    `              onSubmit={${submitHandlerName}}\n` +
     `              columnsNo="2"\n` +
     `              buttonColumnsNo="2"\n` +
     `            />\n` +
     `          </BoxContainer>\n` +
     `        </CustomCard>\n` +
     `      </div>\n` +
-    `${options?.hasDealerSearch ? `      <CoDealerPopUp popup={dealerPopup} setPopup={setDealerPopup} setReturnData={setDealerData} />\n` : ''}` +
+    `${hasDealer ? `      <CoDealerPopUp popup={dealerPopup} setPopup={setDealerPopup} setReturnData={handleDealerPopupReturn} />\n` : ''}` +
+    `${modalRenderStr}` +
     `    </div>\n` +
-    `  );\n` +
+    `  );\n`;
+
+  return `"use client";\n\n` +
+    `${importsSection}\n` +
+    `const HEADER = "${pageHeader || `รายงานข้อมูล ${pascalName}`}";\n\n` +
+    `const ${pascalName} = () => {\n` +
+    section1 +
+    section2 +
+    section3 +
+    section4 +
+    section5 +
+    section6 +
+    section7 +
+    section8 +
+    section9 +
+    (watchLines ? watchLines + `\n\n` : '') +
+    section10 +
+    section11 +
+    section12 +
+    section13 +
     `};\n\n` +
     `export default ${pascalName};\n`;
 }
+
+export function generateFrontendPage(
+  moduleName: string,
+  moduleType: string,
+  frontendMode: 'search' | 'report',
+  reportFileName: string
+): string {
+  const pascalName = toPascalCase(moduleName);
+  const camelName = toCamelCase(moduleName);
+  const reportNameCamel = toCamelCase(reportFileName || moduleName);
+  const componentFileName = frontendMode === 'report' ? reportNameCamel : camelName;
+  const typeLower = moduleType.toLowerCase();
+
+  return `"use client";\n\n` +
+    `import ${pascalName} from '@/components/hpls/${typeLower}/${camelName}/${componentFileName}';\n\n` +
+    `export default function Page() {\n` +
+    `  return <${pascalName} />;\n` +
+    `}\n`;
+}
+
 
 // ข้อที่ 5: ฟังก์ชันสร้างไฟล์สคริปต์สิทธิ์ Oracle SQL อัตโนมัติ (คงเดิมไว้)
 export function generatePermissionSQL(moduleName: string, moduleType: string, options: GeneratorOptions): string {
@@ -697,46 +1347,46 @@ export function generatePermissionSQL(moduleName: string, moduleType: string, op
   const pascalName = toPascalCase(moduleName);
 
   return `-- ============================================================================\n` +
-         `-- PERMISSION — ${programId} (${pascalName})\n` +
-         `-- ============================================================================\n\n` +
-         `-- ── STEP 1 : CT_MENU_PAGE_V1 ─────────────────────────────────────────────────\n` +
-         `-- (เช็คก่อน)\n` +
-         `SELECT *\nFROM CT_MENU_PAGE_V1\nWHERE MP_CONTROL = '${legacyUrl}';\n\n` +
-         `UPDATE CT_MENU_PAGE_V1\nSET MP_PROGRAM_ID   = '${programId}',\n    MP_ROUTING_PATH = '${routingPath}'\n` +
-         `WHERE MP_CONTROL    = '${legacyUrl}'\n  AND MP_ACTION     = 'inquiry'\n  AND MP_PROGRAM_ID IS NULL;\nCOMMIT;\n\n\n` +
-         `-- ── STEP 1.5 : CT_MENU_FUNC_V1 ───────────────────────────────────────────────\n` +
-         `UPDATE CT_MENU_FUNC_V1 mf\nSET mf.MF_PROGRAM_ID = (\n` +
-         `    SELECT mp.MP_PROGRAM_ID FROM CT_MENU_PAGE_V1 mp\n` +
-         `    WHERE mp.MP_CONTROL = mf.MF_CONTROL AND mp.MP_PROGRAM_ID = '${programId}')\n` +
-         `WHERE mf.MF_PROGRAM_ID IS NULL\n` +
-         `  AND EXISTS (\n` +
-         `    SELECT 1 FROM CT_MENU_PAGE_V1 mp\n` +
-         `    WHERE mp.MP_CONTROL = mf.MF_CONTROL AND mp.MP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
-         `-- ── STEP 2 : เช็ค role ที่ผูกอยู่ (ไม่ต้องแก้) ──────────────────────────────\n` +
-         `SELECT DISTINCT mr.MR_ROLE_CODE\nFROM CT_MENU_ROLE mr\n` +
-         `JOIN CT_MENU_FUNC_V1 mf ON mf.MF_FUNC_CODE = mr.MR_FUNC_CODE\n` +
-         `JOIN CT_MENU_PAGE_V1 mp ON mp.MP_CONTROL   = mf.MF_CONTROL\n` +
-         `WHERE mp.MP_PROGRAM_ID = '${programId}';\n\n\n` +
-         `-- ── STEP 3 : CT_PROGRAM_PERMISSION_V1 ────────────────────────────────────────\n` +
-         `INSERT INTO CT_PROGRAM_PERMISSION_V1\n` +
-         `  (CPP_ROLE_CODE, CPP_PROGRAM_ID, CPP_PROGRAM_NAME,\n` +
-         `   CPP_ADD_FLAG, CPP_QUERY_FLAG, CPP_UPDATE_FLAG, CPP_DELETE_FLAG,\n` +
-         `   CPP_ACCESS_TYPE, CPP_READ_ONLY, CREATE_BY, CREATE_DT)\n` +
-         `SELECT r.role, '${programId}', '${programId}${pascalName}',\n` +
-         `       'Y', 'Y', 'Y', 'Y', '', 'N', 'MIGRATE-${programId}', SYSTIMESTAMP\n` +
-         `FROM ( SELECT '${roleCode}' role FROM dual ) r\n` +
-         `WHERE NOT EXISTS (SELECT 1 FROM CT_PROGRAM_PERMISSION_V1 x\n` +
-         `                  WHERE x.CPP_ROLE_CODE = r.role AND x.CPP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
-         `-- ── STEP 4 : CT_API_PATH_PROGRAM ─────────────────────────────────────────────\n` +
-         `INSERT INTO CT_API_PATH_PROGRAM (APP_API_PATH, APP_PROGRAM_ID, APP_CREATE_BY)\n` +
-         `SELECT '/${moduleType.toLowerCase()}${routingPath}', '${programId}', 'MIGRATE-${programId}' FROM dual\n` +
-         `WHERE NOT EXISTS (SELECT 1 FROM CT_API_PATH_PROGRAM\n` +
-         `                  WHERE APP_API_PATH = '/${moduleType.toLowerCase()}${routingPath}' AND APP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
-         `-- ── VERIFY ────────────────────────────────────────────────────────────────────\n` +
-         `SELECT (SELECT COUNT(*) FROM CT_API_PATH_PROGRAM\n` +
-         `        WHERE APP_PROGRAM_ID = '${programId}')                                        AS path_rows,\n` +
-         `       (SELECT COUNT(DISTINCT CPP_ROLE_CODE) FROM CT_PROGRAM_PERMISSION_V1\n` +
-         `        WHERE CPP_PROGRAM_ID = '${programId}')                                        AS granted_roles\n` +
-         `FROM dual;\n` +
-         `-- 👉 เสร็จแล้ว restart permission-service\n`;
+    `-- PERMISSION — ${programId} (${pascalName})\n` +
+    `-- ============================================================================\n\n` +
+    `-- ── STEP 1 : CT_MENU_PAGE_V1 ─────────────────────────────────────────────────\n` +
+    `-- (เช็คก่อน)\n` +
+    `SELECT *\nFROM CT_MENU_PAGE_V1\nWHERE MP_CONTROL = '${legacyUrl}';\n\n` +
+    `UPDATE CT_MENU_PAGE_V1\nSET MP_PROGRAM_ID   = '${programId}',\n    MP_ROUTING_PATH = '${routingPath}'\n` +
+    `WHERE MP_CONTROL    = '${legacyUrl}'\n  AND MP_ACTION     = 'inquiry'\n  AND MP_PROGRAM_ID IS NULL;\nCOMMIT;\n\n\n` +
+    `-- ── STEP 1.5 : CT_MENU_FUNC_V1 ───────────────────────────────────────────────\n` +
+    `UPDATE CT_MENU_FUNC_V1 mf\nSET mf.MF_PROGRAM_ID = (\n` +
+    `    SELECT mp.MP_PROGRAM_ID FROM CT_MENU_PAGE_V1 mp\n` +
+    `    WHERE mp.MP_CONTROL = mf.MF_CONTROL AND mp.MP_PROGRAM_ID = '${programId}')\n` +
+    `WHERE mf.MF_PROGRAM_ID IS NULL\n` +
+    `  AND EXISTS (\n` +
+    `    SELECT 1 FROM CT_MENU_PAGE_V1 mp\n` +
+    `    WHERE mp.MP_CONTROL = mf.MF_CONTROL AND mp.MP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
+    `-- ── STEP 2 : เช็ค role ที่ผูกอยู่ (ไม่ต้องแก้) ──────────────────────────────\n` +
+    `SELECT DISTINCT mr.MR_ROLE_CODE\nFROM CT_MENU_ROLE mr\n` +
+    `JOIN CT_MENU_FUNC_V1 mf ON mf.MF_FUNC_CODE = mr.MR_FUNC_CODE\n` +
+    `JOIN CT_MENU_PAGE_V1 mp ON mp.MP_CONTROL   = mf.MF_CONTROL\n` +
+    `WHERE mp.MP_PROGRAM_ID = '${programId}';\n\n\n` +
+    `-- ── STEP 3 : CT_PROGRAM_PERMISSION_V1 ────────────────────────────────────────\n` +
+    `INSERT INTO CT_PROGRAM_PERMISSION_V1\n` +
+    `  (CPP_ROLE_CODE, CPP_PROGRAM_ID, CPP_PROGRAM_NAME,\n` +
+    `   CPP_ADD_FLAG, CPP_QUERY_FLAG, CPP_UPDATE_FLAG, CPP_DELETE_FLAG,\n` +
+    `   CPP_ACCESS_TYPE, CPP_READ_ONLY, CREATE_BY, CREATE_DT)\n` +
+    `SELECT r.role, '${programId}', '${programId}${pascalName}',\n` +
+    `       'Y', 'Y', 'Y', 'Y', '', 'N', 'MIGRATE-${programId}', SYSTIMESTAMP\n` +
+    `FROM ( SELECT '${roleCode}' role FROM dual ) r\n` +
+    `WHERE NOT EXISTS (SELECT 1 FROM CT_PROGRAM_PERMISSION_V1 x\n` +
+    `                  WHERE x.CPP_ROLE_CODE = r.role AND x.CPP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
+    `-- ── STEP 4 : CT_API_PATH_PROGRAM ─────────────────────────────────────────────\n` +
+    `INSERT INTO CT_API_PATH_PROGRAM (APP_API_PATH, APP_PROGRAM_ID, APP_CREATE_BY)\n` +
+    `SELECT '/${moduleType.toLowerCase()}${routingPath}', '${programId}', 'MIGRATE-${programId}' FROM dual\n` +
+    `WHERE NOT EXISTS (SELECT 1 FROM CT_API_PATH_PROGRAM\n` +
+    `                  WHERE APP_API_PATH = '/${moduleType.toLowerCase()}${routingPath}' AND APP_PROGRAM_ID = '${programId}');\nCOMMIT;\n\n\n` +
+    `-- ── VERIFY ────────────────────────────────────────────────────────────────────\n` +
+    `SELECT (SELECT COUNT(*) FROM CT_API_PATH_PROGRAM\n` +
+    `        WHERE APP_PROGRAM_ID = '${programId}')                                        AS path_rows,\n` +
+    `       (SELECT COUNT(DISTINCT CPP_ROLE_CODE) FROM CT_PROGRAM_PERMISSION_V1\n` +
+    `        WHERE CPP_PROGRAM_ID = '${programId}')                                        AS granted_roles\n` +
+    `FROM dual;\n` +
+    `-- 👉 เสร็จแล้ว restart permission-service\n`;
 }
