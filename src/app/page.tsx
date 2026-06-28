@@ -187,12 +187,12 @@ export default function GeneratorPage() {
         case 'service': return { path: `FrontEnd/_service/${type.toLowerCase()}/${camelName}.service.ts`, code: generateFrontendService(name, type, fields, frontendMode === 'report', genOptions) };
         case 'model': return { path: `FrontEnd/_models/${type.toLowerCase()}/${camelName}.model.ts`, code: generateFrontendModel(name, type, fields, frontendMode, genOptions) };
         case 'searchViewPage': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/${camelName}.tsx`, code: generateFrontendSearchComponent(name, type, fields, buttons, finalHeader, genOptions) };
-        case 'searchTable': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/tables/${camelName}Table.tsx`, code: generateFrontendSearchTable(name, type, fields) };
-        case 'searchSchema': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/schemas/${camelName}SearchSchema.tsx`, code: generateFrontendSearchSchema(name, fields) };
-        case 'formSchema': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/schemas/${camelName}FormSchema.tsx`, code: generateFrontendFormSchema(name, fields) };
-        case 'detailComponent': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/pop-ups/${camelName}-form-modal.tsx`, code: generateFrontendDetailComponent(name, type, fields, buttons) };
+        case 'searchTable': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/tables/${camelName}Table.tsx`, code: generateFrontendSearchTable(name, type, fields, genOptions) };
+        case 'searchSchema': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/schemas/${camelName}SearchSchema.tsx`, code: generateFrontendSearchSchema(name, fields, genOptions) };
+        case 'formSchema': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/schemas/${camelName}FormSchema.tsx`, code: generateFrontendFormSchema(name, fields, genOptions) };
+        case 'detailComponent': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/pop-ups/${camelName}-form-modal.tsx`, code: generateFrontendDetailComponent(name, type, fields, buttons, genOptions) };
         case 'reportComponent': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/${reportNameCamel}.tsx`, code: generateFrontendReportComponent(name, type, fields, buttons, reportFileName, reportEngine, finalHeader, genOptions) };
-        case 'reportSchema': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/schemas/${reportFileName}Schema.tsx`, code: generateFrontendReportSchema(name, fields, reportFileName) };
+        case 'reportSchema': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/schemas/${reportFileName}Schema.tsx`, code: generateFrontendReportSchema(name, fields, reportFileName, genOptions) };
         case 'searchStore': return { path: `FrontEnd/_providers/${type.toLowerCase()}/${camelName}Store.ts`, code: generateFrontendSearchStore(name, type) };
         case 'routingPage': return { path: `FrontEnd/app/(private)/(${type.toLowerCase()})/${camelName}/page.tsx`, code: generateFrontendPage(name, type, frontendMode, reportFileName) };
         default: return { path: '', code: '' };

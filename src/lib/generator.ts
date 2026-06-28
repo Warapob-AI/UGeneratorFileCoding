@@ -1,7 +1,10 @@
 // Utility functions for string casing
 export function toPascalCase(str: string): string {
   if (!str) return '';
-  return str.replace(/(?:^\w|[A-Z]|\b\w)/g, (letter) => letter.toUpperCase()).replace(/[\s\-_]+/g, '');
+  return str
+    .replace(/[\s\-_]+/g, ' ')
+    .replace(/(?:^\w|[A-Z]|\b\w)/g, (letter) => letter.toUpperCase())
+    .replace(/\s+/g, '');
 }
 
 export function toCamelCase(str: string): string {
@@ -31,8 +34,11 @@ export function toKebabCase(str: string): string {
 export function getDefaultLabel(name: string): string {
   if (!name) return '';
   const lower = name.toLowerCase();
-  if (lower.endsWith('tolabel') || lower.endsWith('to label') || lower.endsWith('to')) {
-    return 'To';
+  if (lower.endsWith('from') || lower.endsWith('ตั้งแต่')) {
+    return 'วันที่ ตั้งแต่';
+  }
+  if (lower.endsWith('to') || lower.endsWith('ถึง')) {
+    return 'ถึง';
   }
   return toPascalCase(name).replace(/([a-z])([A-Z])/g, '$1 $2');
 }
@@ -207,10 +213,10 @@ export function generateBackendRepositoryCustomImpl(moduleName: string, moduleTy
       : `        if (request.get${toPascalCase(f.name)}() != null) {\n            sql.append(" AND ${col} = :${f.name} ");\n            params.put("${f.name}", request.get${toPascalCase(f.name)}());\n        }`;
   }).join('\n');
   const resultMapperFields = fields.map(f => {
-    let getter = f.type === 'Integer' ? 'getInt' : f.type === 'Long' ? 'getLong' : f.type === 'Double' ? 'getDouble' : f.type === 'BigDecimal' ? 'getBigDecimal' : 'getString';
+    let getter = f.type === 'Integer' ? 'Int' : f.type === 'Long' ? 'Long' : f.type === 'Double' ? 'Double' : f.type === 'BigDecimal' ? 'BigDecimal' : 'String';
     return f.type === 'LocalDate'
       ? `                        .${f.name}(rs.getDate("${f.columnName || toSnakeCase(f.name)}") != null ? rs.getDate("${f.columnName || toSnakeCase(f.name)}").toLocalDate() : null)`
-      : `                        .${f.name}(rs.get${toPascalCase(getter)}("${f.columnName || toSnakeCase(f.name)}"))`;
+      : `                        .${f.name}(rs.get${getter}("${f.columnName || toSnakeCase(f.name)}"))`;
   }).join('\n');
   return `package com.gable.um.${typeLower}.repository;\nimport com.gable.um.${typeLower}.dto.*;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.context.annotation.Profile;\nimport org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;\nimport org.springframework.stereotype.Repository;\nimport java.util.*;\n@Profile("oracle")\n@Repository\n@RequiredArgsConstructor\npublic class ${pascalName}RepositoryCustomImpl implements ${pascalName}RepositoryCustom {\n    private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;\n    private String escapeLike(String value) { return value == null ? null : value.replace("_", "\\\\_"); }\n    @Override\n    public List<${pascalName}Response> search${pascalName}(${pascalName}SearchRequest request) {\n        Map<String, Object> params = new HashMap<>();\n        StringBuilder sql = new StringBuilder("SELECT ${selectColumns} FROM ${table} WHERE 1=1 ");\n${queryConditions}\n        return namedParameterJdbcTemplate.query(sql.toString(), params, (rs, rowNum) ->\n                ${pascalName}Response.builder()\n${resultMapperFields}\n                        .build()\n        );\n    }\n}\n`;
 }
@@ -240,15 +246,11 @@ export function generateBackendServiceImpl(moduleName: string, moduleType: strin
 // FRONTEND MODELS & SCHEMAS
 // ============================================================================
 
-export function generateFrontendModel(
-  moduleName: string,
-  moduleType: string,
+export function prepareFrontendFields(
   fields: FieldDefinition[],
   frontendMode?: 'search' | 'report',
   options?: GeneratorOptions
-): string {
-  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
-  const pascalName = toPascalCase(moduleName);
+): FieldDefinition[] {
   let finalFields = [...fields];
 
   if (options?.hasDealerSearch) {
@@ -260,6 +262,36 @@ export function generateFrontendModel(
     if (!finalFields.some(f => f.name === 'isEdit')) finalFields.push({ name: 'isEdit', type: 'Boolean', columnName: 'IS_EDIT', isKey: false, label: 'isEdit' });
     if (!finalFields.some(f => f.name === 'isView')) finalFields.push({ name: 'isView', type: 'Boolean', columnName: 'IS_VIEW', isKey: false, label: 'isView' });
   }
+
+  // Reorder finalFields to put dealerCode and dealerName at the top if dealerCode is present
+  const dealerCodeIndex = finalFields.findIndex(f => f.name.toLowerCase() === 'dealercode');
+  if (dealerCodeIndex !== -1) {
+    const dealerCodeField = finalFields[dealerCodeIndex];
+    const dealerNameField = finalFields.find(f => f.name.toLowerCase() === 'dealername');
+    const remainingFields = finalFields.filter(f => {
+      const lower = f.name.toLowerCase();
+      return lower !== 'dealercode' && lower !== 'dealername';
+    });
+    const prepended: FieldDefinition[] = [dealerCodeField];
+    if (dealerNameField) {
+      prepended.push(dealerNameField);
+    }
+    finalFields = [...prepended, ...remainingFields];
+  }
+
+  return finalFields;
+}
+
+export function generateFrontendModel(
+  moduleName: string,
+  moduleType: string,
+  fields: FieldDefinition[],
+  frontendMode?: 'search' | 'report',
+  options?: GeneratorOptions
+): string {
+  if (!fields || fields.length === 0) return '// Add at least one field to generate code.';
+  const pascalName = toPascalCase(moduleName);
+  const finalFields = prepareFrontendFields(fields, frontendMode, options);
 
   const modelFieldsStr = finalFields.map(f => `  ${f.name}?: ${mapJavaTypeToTs(f.type)};`).join('\n');
   const fieldsObjectFields = finalFields.map(f => `  ${toSnakeCase(f.name)}: "${f.name}",`).join('\n');
@@ -285,12 +317,8 @@ export function generateFrontendService(
   const typeUpper = moduleType.toUpperCase();
   const typeLower = moduleType.toLowerCase();
 
-  let targetFields = [...fields];
-  if (options?.hasDealerSearch) {
-    if (!targetFields.some(f => f.name === 'dealerCode')) targetFields.push({ name: 'dealerCode', type: 'String', columnName: 'DEALER_CODE', isKey: false });
-    if (!targetFields.some(f => f.name === 'dealerName')) targetFields.push({ name: 'dealerName', type: 'String', columnName: 'DEALER_NAME', isKey: false });
-  }
-  const mappingParams = targetFields.map(f => f.type === 'LocalDate' ? `      ${f.name}: formatLocalDate(theModel.${f.name}),` : `      ${f.name}: theModel.${f.name},`).join('\n');
+  const finalFields = prepareFrontendFields(fields, isReport ? 'report' : 'search', options);
+  const mappingParams = finalFields.map(f => f.type === 'LocalDate' ? `      ${f.name}: formatLocalDate(theModel.${f.name}),` : `      ${f.name}: theModel.${f.name},`).join('\n');
 
   if (isReport) {
     return `import { Constants } from "@/_helpers/constants";\n` +
@@ -323,8 +351,16 @@ export function generateFrontendService(
     `    },\n` +
     `  });\n` +
     `}\n\n` +
+    `function save${pascalName}(theModel: ${pascalName}Model) {\n` +
+    `  return axios.post<Response<${pascalName}Model>>(\`\${${toSnakeCase(moduleName)}_URL}/save\`, theModel);\n` +
+    `}\n\n` +
+    `function delete${pascalName}(id: string | number) {\n` +
+    `  return axios.delete<Response<void>>(\`\${${toSnakeCase(moduleName)}_URL}/delete/\${id}\`);\n` +
+    `}\n\n` +
     `export const ${camelName}Service = {\n` +
     `  get${pascalName}List,\n` +
+    `  save${pascalName},\n` +
+    `  delete${pascalName},\n` +
     `};\n`;
 }
 
@@ -344,10 +380,15 @@ function getZodSchemaField(f: FieldDefinition): string {
   }
 }
 
-export function generateFrontendSearchSchema(moduleName: string, fields: FieldDefinition[]): string {
+export function generateFrontendSearchSchema(
+  moduleName: string,
+  fields: FieldDefinition[],
+  options?: GeneratorOptions
+): string {
   const pascalName = toPascalCase(moduleName);
-  const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
-  const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
+  const finalFields = prepareFrontendFields(fields, 'search', options);
+  const zodFields = finalFields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
+  const defaults = finalFields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
   return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
     `import { z } from "zod";\n\n` +
     `export const ${pascalName}SearchSchema = z.object({\n` +
@@ -358,11 +399,17 @@ export function generateFrontendSearchSchema(moduleName: string, fields: FieldDe
     `};\n`;
 }
 
-export function generateFrontendSearchTable(moduleName: string, moduleType: string, fields: FieldDefinition[]): string {
+export function generateFrontendSearchTable(
+  moduleName: string,
+  moduleType: string,
+  fields: FieldDefinition[],
+  options?: GeneratorOptions
+): string {
   const pascalName = toPascalCase(moduleName);
   const camelName = toCamelCase(moduleName);
   const typeLower = moduleType.toLowerCase();
-  const columnsDef = fields.map(f => f.type === 'LocalDate' ? `          constructDateColumn({\n            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n            header: "${f.label || getDefaultLabel(f.name)}",\n          })` : `          {\n            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n            header: "${f.label || getDefaultLabel(f.name)}",\n          }`).join(',\n');
+  const finalFields = prepareFrontendFields(fields, 'search', options);
+  const columnsDef = finalFields.map(f => f.type === 'LocalDate' ? `          constructDateColumn({\n            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n            header: "${f.label || getDefaultLabel(f.name)}",\n          })` : `          {\n            accessorKey: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n            header: "${f.label || getDefaultLabel(f.name)}",\n          }`).join(',\n');
   return `"use client";\n\n` +
     `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\n` +
     `import { constructDateColumn } from "@/components/layout/Form";\n` +
@@ -398,11 +445,17 @@ export function generateFrontendSearchTable(moduleName: string, moduleType: stri
     `};\n`;
 }
 
-export function generateFrontendReportSchema(moduleName: string, fields: FieldDefinition[], reportFileName: string): string {
+export function generateFrontendReportSchema(
+  moduleName: string,
+  fields: FieldDefinition[],
+  reportFileName: string,
+  options?: GeneratorOptions
+): string {
   const finalReportName = reportFileName || (toCamelCase(moduleName) + 'Report');
   const pascalReportName = toPascalCase(finalReportName);
-  const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
-  const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
+  const finalFields = prepareFrontendFields(fields, 'report', options);
+  const zodFields = finalFields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
+  const defaults = finalFields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
   return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
     `import { z } from "zod";\n\n` +
     `export const ${pascalReportName}Schema = z.object({\n` +
@@ -413,10 +466,15 @@ export function generateFrontendReportSchema(moduleName: string, fields: FieldDe
     `};\n`;
 }
 
-export function generateFrontendFormSchema(moduleName: string, fields: FieldDefinition[]): string {
+export function generateFrontendFormSchema(
+  moduleName: string,
+  fields: FieldDefinition[],
+  options?: GeneratorOptions
+): string {
   const pascalName = toPascalCase(moduleName);
-  const zodFields = fields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
-  const defaults = fields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
+  const finalFields = prepareFrontendFields(fields, 'search', options);
+  const zodFields = finalFields.map(f => `  ${f.name}: ${getZodSchemaField(f)}`).join(',\n');
+  const defaults = finalFields.map(f => f.type === 'Boolean' ? `  ${f.name}: "N"` : f.type === 'LocalDate' ? `  ${f.name}: undefined` : `  ${f.name}: ""`).join(',\n');
   return `import { ZodHelper } from "@/_helpers/zod-helper";\n` +
     `import { z } from "zod";\n\n` +
     `export const ${pascalName}FormSchema = z.object({\n` +
@@ -434,20 +492,25 @@ export function generateFrontendSearchStore(moduleName: string, moduleType: stri
   return `"use client";\n\n` +
     `import { create } from "zustand";\n` +
     `import { createJSONStorage, persist } from "zustand/middleware";\n` +
-    `import { ${pascalName}Model } from "@/_models/${typeLower}/${camelName}.model";\n` +
     `import { default${pascalName}SearchValues } from "@/components/hpls/${typeLower}/${camelName}/schemas/${camelName}SearchSchema";\n\n` +
-    `interface ${pascalName}SearchState {\n` +
-    `  searchParams: ${pascalName}Model;\n` +
-    `  setSearchParams: (params: ${pascalName}Model) => void;\n` +
-    `  clearSearchParams: () => void;\n` +
-    `}\n\n` +
-    `const initial${pascalName}SearchState: ${pascalName}Model = { ...default${pascalName}SearchValues };\n\n` +
+    `export type ${pascalName}SearchState = {\n` +
+    `  searchParams: typeof default${pascalName}SearchValues;\n` +
+    `  useParamsFlag: boolean;\n` +
+    `  setSearchParams: (\n` +
+    `    params: Partial<${pascalName}SearchState["searchParams"]>\n` +
+    `  ) => void;\n` +
+    `  setUseParamsFlag: (useParam: boolean) => void;\n` +
+    `};\n\n` +
     `export const use${pascalName}SearchStore = create<${pascalName}SearchState>()(\n` +
     `  persist(\n` +
     `    (set) => ({\n` +
-    `      searchParams: initial${pascalName}SearchState,\n` +
-    `      setSearchParams: (params) => set({ searchParams: params }),\n` +
-    `      clearSearchParams: () => set({ searchParams: initial${pascalName}SearchState }),\n` +
+    `      searchParams: default${pascalName}SearchValues,\n` +
+    `      useParamsFlag: false,\n` +
+    `      setSearchParams: (params) =>\n` +
+    `        set((state) => ({\n` +
+    `          searchParams: { ...state.searchParams, ...params },\n` +
+    `        })),\n` +
+    `      setUseParamsFlag: (flag) => set({ useParamsFlag: flag }),\n` +
     `    }),\n` +
     `    {\n` +
     `      name: "${camelName}-search-store",\n` +
@@ -457,7 +520,8 @@ export function generateFrontendSearchStore(moduleName: string, moduleType: stri
     `);\n`;
 }
 
-function getFieldInputTemplate(f: FieldDefinition, pascalName: string): string {
+
+function getFieldInputTemplate(f: FieldDefinition, pascalName: string, allFields: FieldDefinition[] = []): string {
   let label = f.label || getDefaultLabel(f.name);
   const disableSnippet = f.disable ? `,\n      disable: true` : '';
 
@@ -475,22 +539,46 @@ function getFieldInputTemplate(f: FieldDefinition, pascalName: string): string {
     optionsSnippet = `,\n      options: dropdowns.${toCamelCase(f.name)}Options`;
   }
 
+  // Snippet สำหรับ isRequired
+  const reqSnippet = f.isRequired ? `,\n      isRequired: true` : '';
+
   // 3. พ่นโครงสร้างอ็อบเจกต์ส่งออกตามประเภท UI
   if (uiType === 'checkbox') {
-    return `    {\n      type: 'checkbox',\n      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n      label: '${label}'${disableSnippet}\n    }`;
+    return `    {\n      type: 'checkbox',\n      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n      label: '${label}'${disableSnippet}${reqSnippet}\n    }`;
   } else if (uiType === 'calendar') {
     let rangeProps = '';
-    if (f.name.toLowerCase().includes('from')) {
-      const matchTo = f.name.replace(/from/i, 'To');
-      rangeProps = `,\n      maxDate: ${toCamelCase(matchTo)}`;
-    } else if (f.name.toLowerCase().includes('to')) {
-      const matchFrom = f.name.replace(/to/i, 'From');
-      rangeProps = `,\n      minDate: ${toCamelCase(matchFrom)}`;
+    const matchToName = findMatchingToField(f.name, allFields);
+    const matchFromName = findMatchingFromField(f.name, allFields);
+    if (matchToName) {
+      rangeProps = `,\n      maxDate: ${toCamelCase(matchToName)} as Date | undefined`;
+    } else if (matchFromName) {
+      rangeProps = `,\n      minDate: ${toCamelCase(matchFromName)} as Date | undefined`;
+    } else {
+      const lowerName = f.name.toLowerCase();
+      if (lowerName.includes('from')) {
+        const matchTo = f.name.replace(/from/i, 'To');
+        rangeProps = `,\n      maxDate: ${toCamelCase(matchTo)} as Date | undefined`;
+      } else if (lowerName.includes('to')) {
+        const matchFrom = f.name.replace(/to/i, 'From');
+        rangeProps = `,\n      minDate: ${toCamelCase(matchFrom)} as Date | undefined`;
+      }
     }
     return `    {\n      type: 'calendar',\n      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n      label: '${label}',\n      isRequired: ${f.isRequired ? 'true' : 'false'}${rangeProps}${disableSnippet}\n    }`;
   } else {
+    let typeAttr = uiType;
+    let inputTypeSnippet = '';
+    if (uiType === 'number') {
+      typeAttr = 'text';
+      inputTypeSnippet = `,\n      inputType: 'number'`;
+    }
+
+    let maxLenSnippet = '';
+    if ((uiType === 'text' || uiType === 'textarea' || uiType === 'number') && f.maxLength !== undefined && f.maxLength > 0) {
+      maxLenSnippet = `,\n      maxLength: ${f.maxLength}`;
+    }
+
     // รองรับ text, number, select, radio ได้อย่างถูกต้องแม่นยำตามที่เลือกบน UI
-    return `    {\n      type: '${uiType}',\n      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n      label: '${label}'${optionsSnippet}${disableSnippet}\n    }`;
+    return `    {\n      type: '${typeAttr}',\n      fieldName: ${pascalName}ModelFields.${toSnakeCase(f.name)},\n      label: '${label}'${optionsSnippet}${disableSnippet}${inputTypeSnippet}${reqSnippet}${maxLenSnippet}\n    }`;
   }
 }
 
@@ -510,19 +598,92 @@ function buildImports(sections: { category: string; imports: string[] }[]): stri
     .join('\n');
 }
 
-export function generateFrontendDetailComponent(moduleName: string, moduleType: string, fields: FieldDefinition[], buttons: ButtonsSelection): string {
+export function generateFrontendDetailComponent(
+  moduleName: string,
+  moduleType: string,
+  fields: FieldDefinition[],
+  buttons: ButtonsSelection,
+  options?: GeneratorOptions
+): string {
   const pascalName = toPascalCase(moduleName);
+  const camelName = toCamelCase(moduleName);
+  const typeLower = moduleType.toLowerCase();
+
+  const finalFields = prepareFrontendFields(fields, 'search', options);
+  const inputsStr = finalFields.map(f => getFieldInputTemplate(f, pascalName, finalFields)).join(',\n');
+
   return `"use client";\n\n` +
+    `import { useEffect } from "react";\n` +
     `import { useForm } from "react-hook-form";\n` +
+    `import { zodResolver } from "@hookform/resolvers/zod";\n` +
+    `import z from "zod";\n` +
     `import { CustomDialog } from "@/components/layout/Form/CustomDialog";\n` +
-    `import DynamicForm from "@/components/layout/Form/dynamic-form-builder";\n` +
-    `import BoxContainer from "@/components/ui/box-container";\n\n` +
-    `const ${pascalName}FormModal = ({ open, setOpen }: any) => {\n` +
-    `  const modalForm = useForm();\n` +
+    `import DynamicForm, { ButtonConfig, DynamicField } from "@/components/layout/Form/dynamic-form-builder";\n` +
+    `import BoxContainer from "@/components/ui/box-container";\n` +
+    `import { useLoading } from "@/_providers/loader-provider";\n` +
+    `import { useAlert } from "@/_providers/alert-provider";\n` +
+    `import { ${pascalName}FormSchema } from "../schemas/${camelName}FormSchema";\n` +
+    `import { ${pascalName}Model, ${pascalName}ModelFields } from "@/_models/${typeLower}/${camelName}.model";\n` +
+    `import { ${camelName}Service } from "@/_service/${typeLower}/${camelName}/${camelName}.service";\n\n` +
+    `interface ${pascalName}FormModalProps {\n` +
+    `  open: boolean;\n` +
+    `  setOpen: (open: boolean) => void;\n` +
+    `  data?: ${pascalName}Model;\n` +
+    `  onSuccess?: () => void;\n` +
+    `}\n\n` +
+    `const ${pascalName}FormModal = ({ open, setOpen, data, onSuccess }: ${pascalName}FormModalProps) => {\n` +
+    `  const { openAlert, errorAlert } = useAlert();\n` +
+    `  const setLoading = useLoading((s) => s.setLoading);\n\n` +
+    `  const modalForm = useForm<z.infer<typeof ${pascalName}FormSchema>>({\n` +
+    `    resolver: zodResolver(${pascalName}FormSchema),\n` +
+    `    defaultValues: data || {},\n` +
+    `    mode: "onChange",\n` +
+    `  });\n\n` +
+    `  useEffect(() => {\n` +
+    `    if (open) {\n` +
+    `      modalForm.reset(data || {});\n` +
+    `    }\n` +
+    `  }, [open, data, modalForm]);\n\n` +
+    `  const onSubmit = async (values: z.infer<typeof ${pascalName}FormSchema>) => {\n` +
+    `    setLoading(true);\n` +
+    `    try {\n` +
+    `      const res = await ${camelName}Service.save${pascalName}(values as ${pascalName}Model);\n` +
+    `      if (res.data?.status) {\n` +
+    `        openAlert(res.data.messageLocal || "บันทึกข้อมูลสำเร็จ", "success" as any);\n` +
+    `        setOpen(false);\n` +
+    `        if (onSuccess) onSuccess();\n` +
+    `      } else {\n` +
+    `        openAlert(res.data.messageLocal || "เกิดข้อผิดพลาดในการบันทึกข้อมูล", "error" as any);\n` +
+    `      }\n` +
+    `    } catch (err) {\n` +
+    `      errorAlert(err);\n` +
+    `    } finally {\n` +
+    `      setLoading(false);\n` +
+    `    }\n` +
+    `  };\n\n` +
+    `  const formFields: DynamicField[] = [\n` +
+    `${inputsStr}\n` +
+    `  ];\n\n` +
+    `  const formButtons: ButtonConfig[] = [\n` +
+    `    { labelId: "BUTTON.SAVE", type: "submit", showButton: !data?.isView },\n` +
+    `    { labelId: "BUTTON.CLOSE", type: "button", showButton: true, onClick: () => setOpen(false) }\n` +
+    `  ];\n\n` +
     `  return (\n` +
-    `    <CustomDialog open={open} onOpenChange={setOpen} title="ข้อมูล" size="lg">\n` +
+    `    <CustomDialog\n` +
+    `      open={open}\n` +
+    `      onOpenChange={setOpen}\n` +
+    `      title={data?.isView ? "ดูรายละเอียด" : data?.isEdit ? "แก้ไขข้อมูล" : "เพิ่มข้อมูล"}\n` +
+    `      size="lg"\n` +
+    `    >\n` +
     `      <BoxContainer variant="compact">\n` +
-    `        <DynamicForm inputFormControl={modalForm} formId="modalForm" fields={[]} columnsNo="1" />\n` +
+    `        <DynamicForm\n` +
+    `          inputFormControl={modalForm}\n` +
+    `          formId="${camelName}FormModal"\n` +
+    `          fields={formFields}\n` +
+    `          buttons={formButtons}\n` +
+    `          onSubmit={onSubmit}\n` +
+    `          columnsNo="2"\n` +
+    `        />\n` +
     `      </BoxContainer>\n` +
     `    </CustomDialog>\n` +
     `  );\n` +
@@ -549,7 +710,7 @@ export function generateFrontendSearchComponent(
   const hasDealer = !!options?.hasDealerSearch;
 
   // Build imports
-  const reactImports = ['useRef', 'useState', 'useEffect', 'useCallback'];
+  const reactImports = ['useRef', 'useState', 'useEffect', 'useCallback', 'useMemo'];
   const reactCoreImport = `import { ${reactImports.join(', ')} } from "react";\nimport { useForm } from "react-hook-form";`;
 
   const externalLibsImport = `import z from "zod";\nimport { zodResolver } from "@hookform/resolvers/zod";\nimport { useRouter } from "next/navigation";`;
@@ -598,7 +759,7 @@ export function generateFrontendSearchComponent(
     schemasImports.push(`import { PopupCoDealerModel } from "@/_models/co/popupCo.model";`);
   }
   if (hasDropdowns) {
-    schemasImports.push(`import { DropdownModel } from "@/_models";`);
+    schemasImports.push(`import { DropdownModel } from "@/_models/form.model";`);
   }
 
   const importsSection = buildImports([
@@ -606,8 +767,8 @@ export function generateFrontendSearchComponent(
     { category: 'External libs', imports: [externalLibsImport] },
     { category: 'Layout / UI components', imports: layoutImports },
     { category: 'Shared / feature components', imports: sharedImports },
-    { category: 'Services', imports: servicesImports },
     { category: 'Providers / stores', imports: providersImports },
+    { category: 'Services', imports: servicesImports },
     { category: 'Helpers / utils', imports: helpersImports },
     { category: 'Schemas / models', imports: schemasImports }
   ]);
@@ -616,7 +777,7 @@ export function generateFrontendSearchComponent(
   const dateFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
   const watchLines = dateFields.map(f => `  const ${f.name} = searchForm.watch(${pascalName}ModelFields.${toSnakeCase(f.name)});`).join('\n');
 
-  let inputsStr = fields.map(f => getFieldInputTemplate(f, pascalName)).join(',\n');
+  let inputsStr = fields.map(f => getFieldInputTemplate(f, pascalName, fields)).join(',\n');
   if (hasDealer) {
     inputsStr = getDealerFieldsTemplate(pascalName) + (inputsStr ? ",\n" + inputsStr : "");
   }
@@ -626,13 +787,15 @@ export function generateFrontendSearchComponent(
   // Section 1: State & refs
   const stateLines = [];
   stateLines.push(`  const [showResult, setShowResult] = useState<boolean>(false);`);
-  stateLines.push(`  const [dataTable, setDataTable] = useState<${pascalName}Model[]>([]);`);
   if (hasDealer) {
     stateLines.push(`  const [dealerPopup, setDealerPopup] = useState<boolean>(false);`);
-    stateLines.push(`  const lastDealerCode = useRef<string>("");`);
   }
   if (hasBranch) {
     stateLines.push(`  const [userBranch, setUserBranch] = useState<string>();`);
+  }
+  stateLines.push(`  const [dataTable, setDataTable] = useState<${pascalName}Model[]>([]);`);
+  if (hasDealer) {
+    stateLines.push(`  const lastDealerCode = useRef<string>("");`);
   }
   const section1 = `  // === ${sectionIndex++}. State & refs ===\n${stateLines.join('\n')}\n\n`;
 
@@ -645,7 +808,8 @@ export function generateFrontendSearchComponent(
   if (options?.useSearchStore) {
     providerLines.push(`  const searchParams = use${pascalName}SearchStore((s) => s.searchParams);`);
     providerLines.push(`  const setSearchParams = use${pascalName}SearchStore((s) => s.setSearchParams);`);
-    providerLines.push(`  const clearSearchParams = use${pascalName}SearchStore((s) => s.clearSearchParams);`);
+    providerLines.push(`  const useParamsFlag = use${pascalName}SearchStore((s) => s.useParamsFlag);`);
+    providerLines.push(`  const setUseParamsFlag = use${pascalName}SearchStore((s) => s.setUseParamsFlag);`);
   }
   const section2 = `  // === ${sectionIndex++}. Providers/stores ===\n${providerLines.join('\n')}\n\n`;
 
@@ -656,7 +820,7 @@ export function generateFrontendSearchComponent(
     `    defaultValues: ${options?.useSearchStore ? 'searchParams' : `default${pascalName}SearchValues`},\n` +
     `    mode: "onChange",\n` +
     `  });\n` +
-    (watchLines ? watchLines + `\n\n` : `\n`);
+    (watchLines ? `\n` + watchLines + `\n\n` : `\n`);
 
   // Section 4: Dropdown state
   let section4 = '';
@@ -665,7 +829,8 @@ export function generateFrontendSearchComponent(
     section4 = `  // === ${sectionIndex++}. Dropdown state ===\n` +
       `  const [dropdowns, setDropdowns] = useState({\n` +
       `${dropdownStateFields}\n` +
-      `  });\n\n`;
+      `  });\n\n` +
+      `  const memoizedDropdown = useMemo(() => dropdowns, [dropdowns]);\n\n`;
   }
 
   // Section 5: User default branch
@@ -677,37 +842,33 @@ export function generateFrontendSearchComponent(
       `    const branchCode = userProps?.branchCode;\n` +
       `    setUserBranch(branchCode);\n` +
       `    if (branchCode) {\n` +
-      `      searchForm.setValue("branch", branchCode);\n` +
+      `      searchForm.setValue(${pascalName}ModelFields.BRANCH, branchCode);\n` +
       `    }\n` +
       `  };\n\n`;
   }
 
   // Section 6: Effects
-  const effectLines = [];
+  let effectBody = '';
+  if (hasBranch) {
+    effectBody += `    setDefaultBranch();\n`;
+  }
+  if (hasDropdowns) {
+    effectBody += `    fetchDropdowns();\n`;
+  }
   if (options?.useSearchStore) {
-    effectLines.push(
-      `  useEffect(() => {\n` +
-      `    if (searchParams) {\n` +
+    const dateRestores = dateFields.map(f => `        ${f.name}: searchParams.${f.name} ? new Date(searchParams.${f.name} as unknown as string) : undefined,`).join('\n');
+    effectBody += `\n    if (useParamsFlag) {\n` +
       `      searchForm.reset({\n` +
       `        ...searchParams,\n` +
+      `${dateRestores}\n` +
       `      });\n` +
-      `    }\n` +
-      `  }, [searchParams]);`
-    );
+      `      setTimeout(() => onSearch(), 0);\n` +
+      `    }\n`;
   }
-  if (hasBranch || hasDropdowns) {
-    const initCalls = [];
-    if (hasBranch) initCalls.push(`    setDefaultBranch();`);
-    if (hasDropdowns) initCalls.push(`    fetchDropdowns();`);
-    effectLines.push(
-      `  useEffect(() => {\n` +
-      `${initCalls.join('\n')}\n` +
-      `  }, []);`
-    );
-  }
-  const section6 = effectLines.length > 0
-    ? `  // === ${sectionIndex++}. Effects ===\n${effectLines.join('\n\n')}\n\n`
-    : '';
+  const section6 = `  // === ${sectionIndex++}. Effects ===\n` +
+    `  useEffect(() => {\n` +
+    `${effectBody}` +
+    `  }, []);\n\n`;
 
   // Section 7: Dropdown fetching
   let section7 = '';
@@ -726,8 +887,9 @@ export function generateFrontendSearchComponent(
     const destructuring = dropdownFields.map(f => `${toCamelCase(f.name)}List`).join(', ');
     const setFieldsStr = dropdownFields.map(f => `        ${toCamelCase(f.name)}Options: ${toCamelCase(f.name)}List.data,`).join('\n');
 
-    section7 = `  // === ${sectionIndex++}. Dropdown fetching (parallel) ===\n` +
+    section7 = `  // === ${sectionIndex++}. Dropdown fetching ===\n` +
       `  const fetchDropdowns = async () => {\n` +
+      `    setLoading(true);\n` +
       `    try {\n` +
       `      const [${destructuring}] = await Promise.all([\n` +
       `${fetchPromises}\n` +
@@ -737,6 +899,8 @@ export function generateFrontendSearchComponent(
       `      });\n` +
       `    } catch (error) {\n` +
       `      console.error("Error fetching dropdown data:", error);\n` +
+      `    } finally {\n` +
+      `      setLoading(false);\n` +
       `    }\n` +
       `  };\n\n`;
   }
@@ -744,7 +908,7 @@ export function generateFrontendSearchComponent(
   // Section 8: Dealer popup callback
   let section8 = '';
   if (hasDealer) {
-    section8 = `  // === ${sectionIndex++}. Dealer popup callback — fill dealerCode + dealerName ===\n` +
+    section8 = `  // === ${sectionIndex++}. Dealer popup callback ===\n` +
       `  const handleDealerPopupReturn = (data: PopupCoDealerModel) => {\n` +
       `    searchForm.setValue(${pascalName}ModelFields.DEALER_CODE, data.bpCode ?? "");\n` +
       `    searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, data.dealerThaiName ?? "");\n` +
@@ -755,7 +919,7 @@ export function generateFrontendSearchComponent(
   // Section 9: OnBlur handler
   let section9 = '';
   if (hasDealer) {
-    section9 = `  // === ${sectionIndex++}. OnBlur handler — lookup dealer name by code ===\n` +
+    section9 = `  // === ${sectionIndex++}. OnBlur handler ===\n` +
       `  const handleDealerBlur = useCallback(async (value: string) => {\n` +
       `    if (!value || value.trim() === "") {\n` +
       `      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n` +
@@ -780,13 +944,12 @@ export function generateFrontendSearchComponent(
 
   // Section 10: Search handler & Navigation handlers
   let storeSaveAction = options?.useSearchStore ? `    setSearchParams(searchValues);\n` : '';
-  const section10 = `  // === ${sectionIndex++}. Navigation & Action handlers ===\n` +
+  const section10 = `  // === ${sectionIndex++}. Navigation ===\n` +
     `  const handleEditAction = (data: ${pascalName}Model) => {\n` +
-    `    // TODO: Implement edit page navigation (e.g. using path config)\n` +
+    `${options?.useSearchStore ? `    setSearchParams(searchForm.getValues());\n    setUseParamsFlag(true);\n` : ''}` +
     `    console.log("Edit Action", data);\n` +
     `  };\n\n` +
     `  const handleViewAction = (data: ${pascalName}Model) => {\n` +
-    `    // TODO: Implement view page navigation\n` +
     `    console.log("View Action", data);\n` +
     `  };\n\n` +
     `  // === ${sectionIndex++}. Search handler ===\n` +
@@ -811,16 +974,17 @@ export function generateFrontendSearchComponent(
     `      errorAlert(err);\n` +
     `    } finally {\n` +
     `      setLoading(false);\n` +
+    `${options?.useSearchStore ? `      setUseParamsFlag(false);\n` : ''}` +
     `    }\n` +
     `  };\n\n`;
 
   // Section 11: Clear handler
   const branchResetInsideClear = hasBranch
-    ? `    if (userBranch) {\n      searchForm.setValue("branch", userBranch);\n    }\n`
+    ? `    if (userBranch) {\n      searchForm.setValue(${pascalName}ModelFields.BRANCH, userBranch);\n    }\n`
     : '';
   const section11 = `  // === ${sectionIndex++}. Clear handler ===\n` +
     `  const onClear = () => {\n` +
-    `    ${options?.useSearchStore ? 'clearSearchParams();\n' : ''}` +
+    `    ${options?.useSearchStore ? `setSearchParams(default${pascalName}SearchValues);\n` : ''}` +
     `    searchForm.reset(default${pascalName}SearchValues);\n` +
     `${branchResetInsideClear}` +
     `${hasDealer ? '    lastDealerCode.current = "";\n' : ''}` +
@@ -863,7 +1027,7 @@ export function generateFrontendSearchComponent(
     `          )}\n` +
     `        </CustomCard>\n` +
     `      </div>\n` +
-    `${hasDealer ? `      <CoDealerPopUp popup={dealerPopup} setPopup={setDealerPopup} setReturnData={handleDealerPopupReturn} />\n` : ''}` +
+    `${hasDealer ? `      <CoDealerPopUp\n        popup={dealerPopup}\n        setPopup={setDealerPopup}\n        setReturnData={handleDealerPopupReturn}\n      />\n` : ''}` +
     `    </div>\n` +
     `  );\n`;
 
@@ -916,7 +1080,7 @@ export function generateFrontendReportComponent(
   const isJasper = reportEngine === 'jasper';
 
   // Build imports
-  const reactImports = ['useRef', 'useState', 'useEffect', 'useCallback'];
+  const reactImports = ['useRef', 'useState', 'useEffect', 'useCallback', 'useMemo'];
   const reactCoreImport = `import { ${reactImports.join(', ')} } from "react";\nimport { useForm } from "react-hook-form";`;
 
   const externalLibsImport = [
@@ -956,7 +1120,7 @@ export function generateFrontendReportComponent(
   }
 
   const providersImports = [];
-  if (reportEngine === 'direct') {
+  if (reportEngine === 'direct' || hasDropdowns) {
     providersImports.push(`import { useLoading } from "@/_providers/loader-provider";`);
   }
   providersImports.push(`import { useAlert } from "@/_providers/alert-provider";`);
@@ -981,7 +1145,7 @@ export function generateFrontendReportComponent(
     schemasImports.push(`import { PopupCoDealerModel } from "@/_models/co/popupCo.model";`);
   }
   if (hasDropdowns) {
-    schemasImports.push(`import { DropdownModel } from "@/_models";`);
+    schemasImports.push(`import { DropdownModel } from "@/_models/form.model";`);
   }
 
   const importsSection = buildImports([
@@ -989,8 +1153,8 @@ export function generateFrontendReportComponent(
     { category: 'External libs', imports: [externalLibsImportStr] },
     { category: 'Layout / UI components', imports: layoutImports },
     { category: 'Shared / feature components', imports: sharedImports },
-    { category: 'Services', imports: servicesImports },
     { category: 'Providers / stores', imports: providersImports },
+    { category: 'Services', imports: servicesImports },
     { category: 'Helpers / utils', imports: helpersImports },
     { category: 'Schemas / models', imports: schemasImports }
   ]);
@@ -999,7 +1163,7 @@ export function generateFrontendReportComponent(
   const dateFields = fields.filter(f => f.type === 'LocalDate' || f.frontendType === 'calendar');
   const watchLines = dateFields.map(f => `  const ${f.name} = searchForm.watch(${pascalName}ModelFields.${toSnakeCase(f.name)});`).join('\n');
 
-  let inputsStr = fields.map(f => getFieldInputTemplate(f, pascalName)).join(',\n');
+  let inputsStr = fields.map(f => getFieldInputTemplate(f, pascalName, fields)).join(',\n');
   if (hasDealer) {
     inputsStr = getDealerFieldsTemplate(pascalName) + (inputsStr ? ",\n" + inputsStr : "");
   }
@@ -1011,14 +1175,18 @@ export function generateFrontendReportComponent(
   const stateLines = [];
   if (hasDealer) {
     stateLines.push(`  const [dealerPopup, setDealerPopup] = useState<boolean>(false);`);
-    stateLines.push(`  const lastDealerCode = useRef<string>("");`);
+  }
+  if (isCrystal || isJasper) {
+    stateLines.push(`  const [reportOpen, setReportOpen] = useState<boolean>(false);`);
   }
   if (hasBranch) {
     stateLines.push(`  const [userBranch, setUserBranch] = useState<string>();`);
   }
   if (isCrystal || isJasper) {
-    stateLines.push(`  const [reportOpen, setReportOpen] = useState<boolean>(false);`);
     stateLines.push(`  const [reportBaseParams, setReportBaseParams] = useState<unknown[]>([]);`);
+  }
+  if (hasDealer) {
+    stateLines.push(`  const lastDealerCode = useRef<string>("");`);
   }
   const section1 = stateLines.length > 0
     ? `  // === ${sectionIndex++}. State & refs ===\n${stateLines.join('\n')}\n\n`
@@ -1027,14 +1195,15 @@ export function generateFrontendReportComponent(
   // Section 2: Providers / stores
   const providerLines = [];
   providerLines.push(`  const { errorAlert } = useAlert();`);
-  if (reportEngine === 'direct') {
+  if (reportEngine === 'direct' || hasDropdowns) {
     providerLines.push(`  const loading = useLoading((s) => s.loading);`);
     providerLines.push(`  const setLoading = useLoading((s) => s.setLoading);`);
   }
   if (options?.useSearchStore) {
     providerLines.push(`  const searchParams = use${pascalName}SearchStore((s) => s.searchParams);`);
     providerLines.push(`  const setSearchParams = use${pascalName}SearchStore((s) => s.setSearchParams);`);
-    providerLines.push(`  const clearSearchParams = use${pascalName}SearchStore((s) => s.clearSearchParams);`);
+    providerLines.push(`  const useParamsFlag = use${pascalName}SearchStore((s) => s.useParamsFlag);`);
+    providerLines.push(`  const setUseParamsFlag = use${pascalName}SearchStore((s) => s.setUseParamsFlag);`);
   }
   const section2 = providerLines.length > 0
     ? `  // === ${sectionIndex++}. Providers/stores ===\n${providerLines.join('\n')}\n\n`
@@ -1047,7 +1216,7 @@ export function generateFrontendReportComponent(
     `    defaultValues: ${options?.useSearchStore ? 'searchParams' : `default${pascalReportName}Values`},\n` +
     `    mode: "onChange",\n` +
     `  });\n` +
-    (watchLines ? watchLines + `\n\n` : `\n`);
+    (watchLines ? `\n` + watchLines + `\n\n` : `\n`);
 
   // Section 4: Dropdown state
   let section4 = '';
@@ -1056,7 +1225,8 @@ export function generateFrontendReportComponent(
     section4 = `  // === ${sectionIndex++}. Dropdown state ===\n` +
       `  const [dropdowns, setDropdowns] = useState({\n` +
       `${dropdownStateFields}\n` +
-      `  });\n\n`;
+      `  });\n\n` +
+      `  const memoizedDropdown = useMemo(() => dropdowns, [dropdowns]);\n\n`;
   }
 
   // Section 5: User default branch
@@ -1068,49 +1238,32 @@ export function generateFrontendReportComponent(
       `    const branchCode = userProps?.branchCode;\n` +
       `    setUserBranch(branchCode);\n` +
       `    if (branchCode) {\n` +
-      `      searchForm.setValue("branch", branchCode);\n` +
+      `      searchForm.setValue(${pascalName}ModelFields.BRANCH, branchCode);\n` +
       `    }\n` +
       `  };\n\n`;
   }
 
   // Section 6: Effects
-  const effectLines = [];
+  let effectBody = '';
+  if (hasBranch) {
+    effectBody += `    setDefaultBranch();\n`;
+  }
+  if (hasDropdowns) {
+    effectBody += `    fetchDropdowns();\n`;
+  }
   if (options?.useSearchStore) {
-    const dateConstDeclarations = dateFields.map(f => {
-      const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
-      return `      const raw_${f.name} = searchParams[${fieldVar}];`;
-    }).join('\n');
-
-    const dateResetMappings = dateFields.map(f => {
-      const fieldVar = `${pascalName}ModelFields.${toSnakeCase(f.name)}`;
-      return `        [${fieldVar}]: raw_${f.name} ? new Date(raw_${f.name}) : undefined,`;
-    }).join('\n');
-
-    effectLines.push(
-      `  useEffect(() => {\n` +
-      `    if (searchParams) {\n` +
-      `${dateConstDeclarations ? dateConstDeclarations + '\n\n' : ''}` +
+    const dateRestores = dateFields.map(f => `        ${f.name}: searchParams.${f.name} ? new Date(searchParams.${f.name} as unknown as string) : undefined,`).join('\n');
+    effectBody += `\n    if (useParamsFlag) {\n` +
       `      searchForm.reset({\n` +
       `        ...searchParams,\n` +
-      `${dateResetMappings ? dateResetMappings + '\n' : ''}` +
+      `${dateRestores}\n` +
       `      });\n` +
-      `    }\n` +
-      `  }, [searchParams]);`
-    );
+      `    }\n`;
   }
-  if (hasBranch || hasDropdowns) {
-    const initCalls = [];
-    if (hasBranch) initCalls.push(`    setDefaultBranch();`);
-    if (hasDropdowns) initCalls.push(`    fetchDropdowns();`);
-    effectLines.push(
-      `  useEffect(() => {\n` +
-      `${initCalls.join('\n')}\n` +
-      `  }, []);`
-    );
-  }
-  const section6 = effectLines.length > 0
-    ? `  // === ${sectionIndex++}. Effects ===\n${effectLines.join('\n\n')}\n\n`
-    : '';
+  const section6 = `  // === ${sectionIndex++}. Effects ===\n` +
+    `  useEffect(() => {\n` +
+    `${effectBody}` +
+    `  }, []);\n\n`;
 
   // Section 7: Dropdown fetching
   let section7 = '';
@@ -1129,8 +1282,9 @@ export function generateFrontendReportComponent(
     const destructuring = dropdownFields.map(f => `${toCamelCase(f.name)}List`).join(', ');
     const setFieldsStr = dropdownFields.map(f => `        ${toCamelCase(f.name)}Options: ${toCamelCase(f.name)}List.data,`).join('\n');
 
-    section7 = `  // === ${sectionIndex++}. Dropdown fetching (parallel) ===\n` +
+    section7 = `  // === ${sectionIndex++}. Dropdown fetching ===\n` +
       `  const fetchDropdowns = async () => {\n` +
+      `    setLoading(true);\n` +
       `    try {\n` +
       `      const [${destructuring}] = await Promise.all([\n` +
       `${fetchPromises}\n` +
@@ -1140,6 +1294,8 @@ export function generateFrontendReportComponent(
       `      });\n` +
       `    } catch (error) {\n` +
       `      console.error("Error fetching dropdown data:", error);\n` +
+      `    } finally {\n` +
+      `      setLoading(false);\n` +
       `    }\n` +
       `  };\n\n`;
   }
@@ -1147,7 +1303,7 @@ export function generateFrontendReportComponent(
   // Section 8: Dealer popup callback
   let section8 = '';
   if (hasDealer) {
-    section8 = `  // === ${sectionIndex++}. Dealer popup callback — fill dealerCode + dealerName ===\n` +
+    section8 = `  // === ${sectionIndex++}. Dealer popup callback ===\n` +
       `  const handleDealerPopupReturn = (data: PopupCoDealerModel) => {\n` +
       `    searchForm.setValue(${pascalName}ModelFields.DEALER_CODE, data.bpCode ?? "");\n` +
       `    searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, data.dealerThaiName ?? "");\n` +
@@ -1158,7 +1314,7 @@ export function generateFrontendReportComponent(
   // Section 9: OnBlur handler
   let section9 = '';
   if (hasDealer) {
-    section9 = `  // === ${sectionIndex++}. OnBlur handler — lookup dealer name by code ===\n` +
+    section9 = `  // === ${sectionIndex++}. OnBlur handler ===\n` +
       `  const handleDealerBlur = useCallback(async (value: string) => {\n` +
       `    if (!value || value.trim() === "") {\n` +
       `      searchForm.setValue(${pascalName}ModelFields.DEALER_NAME, "");\n` +
@@ -1201,10 +1357,9 @@ export function generateFrontendReportComponent(
       `    setReportOpen(true);\n` +
       `  };\n\n`;
   } else {
-    // direct Excel Export
     let storeSaveAction = options?.useSearchStore ? `    setSearchParams(searchForm.getValues());\n\n` : '';
     const reportDisplayTitle = toPascalCase(reportFileName || (moduleName + 'Report')).replace(/([a-z])([A-Z])/g, '$1 $2');
-    section10 = `  // === ${sectionIndex++}. Export/Print handler ===\n` +
+    section10 = `  // === ${sectionIndex++}. Export handler ===\n` +
       `  const onExport = async (rawValues: z.infer<typeof ${pascalReportName}Schema>) => {\n` +
       `    if (loading) {\n` +
       `      return;\n` +
@@ -1232,11 +1387,11 @@ export function generateFrontendReportComponent(
 
   // Section 11: Clear handler
   const branchResetInsideClear = hasBranch
-    ? `    if (userBranch) {\n      searchForm.setValue("branch", userBranch);\n    }\n`
+    ? `    if (userBranch) {\n      searchForm.setValue(${pascalName}ModelFields.BRANCH, userBranch);\n    }\n`
     : '';
   const section11 = `  // === ${sectionIndex++}. Clear handler ===\n` +
     `  const onClear = () => {\n` +
-    `    ${options?.useSearchStore ? 'clearSearchParams();\n' : ''}` +
+    `    ${options?.useSearchStore ? `setSearchParams(default${pascalReportName}Values);\n` : ''}` +
     `    searchForm.reset(default${pascalReportName}Values);\n` +
     `${branchResetInsideClear}` +
     `${hasDealer ? '    lastDealerCode.current = "";\n' : ''}` +
@@ -1291,7 +1446,7 @@ export function generateFrontendReportComponent(
     `          </BoxContainer>\n` +
     `        </CustomCard>\n` +
     `      </div>\n` +
-    `${hasDealer ? `      <CoDealerPopUp popup={dealerPopup} setPopup={setDealerPopup} setReturnData={handleDealerPopupReturn} />\n` : ''}` +
+    `${hasDealer ? `      <CoDealerPopUp\n        popup={dealerPopup}\n        setPopup={setDealerPopup}\n        setReturnData={handleDealerPopupReturn}\n      />\n` : ''}` +
     `${modalRenderStr}` +
     `    </div>\n` +
     `  );\n`;

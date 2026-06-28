@@ -209,25 +209,25 @@ export async function POST(request: Request) {
         allFiles.push({
           key: 'frontendSearchTable',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, 'tables', `${camelName}Table.tsx`),
-          content: generateFrontendSearchTable(moduleName, moduleType, fields)
+          content: generateFrontendSearchTable(moduleName, moduleType, fields, options)
         });
         // 3. Search Schema
         allFiles.push({
           key: 'frontendSearchSchema',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, 'schemas', `${camelName}SearchSchema.tsx`),
-          content: generateFrontendSearchSchema(moduleName, fields)
+          content: generateFrontendSearchSchema(moduleName, fields, options)
         });
         // 4. Form Schema
         allFiles.push({
           key: 'frontendFormSchema',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, 'schemas', `${camelName}FormSchema.tsx`),
-          content: generateFrontendFormSchema(moduleName, fields)
+          content: generateFrontendFormSchema(moduleName, fields, options)
         });
         // 5. Detail Dialog component (Modal)
         allFiles.push({
           key: 'frontendDetailComponent',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, 'pop-ups', `${camelName}-form-modal.tsx`),
-          content: generateFrontendDetailComponent(moduleName, moduleType, fields, buttons)
+          content: generateFrontendDetailComponent(moduleName, moduleType, fields, buttons, options)
         });
       } else if (frontendMode === 'report') {
         const reportNameCamel = toCamelCase(reportFileName || moduleName);
@@ -241,7 +241,7 @@ export async function POST(request: Request) {
         allFiles.push({
           key: 'frontendReportSchema',
           path: path.join(frontendBase, 'components', 'hpls', moduleType.toLowerCase(), camelName, 'schemas', `${reportFileName}Schema.tsx`),
-          content: generateFrontendReportSchema(moduleName, fields, reportFileName)
+          content: generateFrontendReportSchema(moduleName, fields, reportFileName, options)
         });
       }
 
