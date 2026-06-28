@@ -1493,6 +1493,81 @@ export function generateFrontendPage(
 }
 
 
+export function generateFrontendSetupScript(
+  moduleName: string,
+  moduleType: string,
+  frontendMode: 'search' | 'report',
+  reportFileName: string,
+  options?: GeneratorOptions
+): string {
+  const camelName = toCamelCase(moduleName);
+  const typeLower = moduleType.toLowerCase();
+  const reportNameCamel = toCamelCase(reportFileName || moduleName);
+  const useStore = !!options?.useSearchStore;
+
+  const dirsList = [
+    `src\\_service\\${typeLower}\\${camelName}`,
+    `src\\components\\hpls\\${typeLower}\\${camelName}`,
+    `src\\app\\(private)\\(${typeLower})\\${camelName}`
+  ];
+
+  const filesList = [
+    `src\\_models\\${typeLower}\\${camelName}.model.ts`,
+    `src\\_service\\${typeLower}\\${camelName}\\${camelName}.service.ts`,
+    `src\\app\\(private)\\(${typeLower})\\${camelName}\\page.tsx`
+  ];
+
+  if (frontendMode === 'search') {
+    dirsList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\tables`);
+    dirsList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\schemas`);
+    dirsList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\pop-ups`);
+
+    filesList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\${camelName}.tsx`);
+    filesList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\tables\\${camelName}Table.tsx`);
+    filesList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\schemas\\${camelName}SearchSchema.tsx`);
+    filesList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\schemas\\${camelName}FormSchema.tsx`);
+    filesList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\pop-ups\\${camelName}-form-modal.tsx`);
+  } else {
+    dirsList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\schemas`);
+
+    filesList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\${reportNameCamel}.tsx`);
+    filesList.push(`src\\components\\hpls\\${typeLower}\\${camelName}\\schemas\\${reportFileName}Schema.tsx`);
+  }
+
+  if (useStore) {
+    dirsList.push(`src\\_providers\\${typeLower}\\${camelName}`);
+    filesList.push(`src\\_providers\\${typeLower}\\${camelName}\\${camelName}SearchStore.provider.ts`);
+  }
+
+  return `# PowerShell Script to generate Frontend file structure and blank files
+Write-Host "Creating directories..."
+$dirs = @(
+${dirsList.map(d => `    "${d}"`).join(',\n')}
+)
+
+foreach ($dir in $dirs) {
+    if (!(Test-Path $dir)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Write-Host "Created directory: $dir"
+    }
+}
+
+Write-Host "Creating empty files..."
+$files = @(
+${filesList.map(f => `    "${f}"`).join(',\n')}
+)
+
+foreach ($file in $files) {
+    if (!(Test-Path $file)) {
+        New-Item -ItemType File -Force -Path $file | Out-Null
+        Write-Host "Created file: $file"
+    }
+}
+
+Write-Host "Frontend project structure created successfully!" -ForegroundColor Green
+`;
+}
+
 // ข้อที่ 5: ฟังก์ชันสร้างไฟล์สคริปต์สิทธิ์ Oracle SQL อัตโนมัติ (คงเดิมไว้)
 export function generatePermissionSQL(moduleName: string, moduleType: string, options: GeneratorOptions): string {
   const programId = options.programId || 'COPR07';

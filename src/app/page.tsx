@@ -28,6 +28,7 @@ import {
   generateFrontendSearchStore,
   generatePermissionSQL,
   generateFrontendPage,
+  generateFrontendSetupScript,
   FieldDefinition,
   ButtonsSelection,
   getDefaultLabel,
@@ -195,6 +196,7 @@ export default function GeneratorPage() {
         case 'reportSchema': return { path: `FrontEnd/components/hpls/${type.toLowerCase()}/${camelName}/schemas/${reportFileName}Schema.tsx`, code: generateFrontendReportSchema(name, fields, reportFileName, genOptions) };
         case 'searchStore': return { path: `FrontEnd/_providers/${type.toLowerCase()}/${camelName}Store.ts`, code: generateFrontendSearchStore(name, type) };
         case 'routingPage': return { path: `FrontEnd/app/(private)/(${type.toLowerCase()})/${camelName}/page.tsx`, code: generateFrontendPage(name, type, frontendMode, reportFileName) };
+        case 'setupScript': return { path: `FrontEnd/setup-frontend.ps1`, code: generateFrontendSetupScript(name, type, frontendMode, reportFileName, genOptions) };
         default: return { path: '', code: '' };
       }
     } else {
@@ -638,6 +640,7 @@ export default function GeneratorPage() {
               <button className={`${styles.subTabBtn} ${activeSubTab === 'searchStore' ? styles.active : ''}`} style={{ background: '#f8fafc', color: '#475569', fontWeight: 'bold' }} onClick={() => setActiveSubTab('searchStore')}>Zustand Store</button>
             )}
             <button className={`${styles.subTabBtn} ${activeSubTab === 'routingPage' ? styles.active : ''}`} onClick={() => setActiveSubTab('routingPage')}>Routing (page.tsx)</button>
+            <button className={`${styles.subTabBtn} ${activeSubTab === 'setupScript' ? styles.active : ''}`} style={{ background: '#f0fdf4', color: '#166534', fontWeight: 'bold' }} onClick={() => setActiveSubTab('setupScript')}>Setup Script (PS)</button>
           </div>
         )}
 
